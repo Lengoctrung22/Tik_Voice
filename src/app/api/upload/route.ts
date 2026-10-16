@@ -5,7 +5,7 @@ import { nanoid } from 'nanoid';
 import { connectDB } from '@/lib/db';
 import { Project } from '@/lib/db/models/Project';
 import { getCategoryPath } from '@/lib/storage/local';
-import ffmpeg from 'fluent-ffmpeg';
+import ffmpeg from '@/lib/video/ffmpeg';
 
 export async function POST(request: NextRequest) {
   try {
@@ -112,7 +112,7 @@ async function probeMedia(filePath: string) {
         return resolve({ duration: 30, width: 1080, height: 1920 });
       }
       const stream = data.streams?.find((s) => s.codec_type === 'video');
-      const duration = Number(data.format?.duration) || 30;
+      const duration = Number(data.format?.duration) || Number(stream?.duration) || 30;
       const width = stream?.width || 1080;
       const height = stream?.height || 1920;
       resolve({ duration: Math.round(duration * 100) / 100, width, height });

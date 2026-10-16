@@ -2,8 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { IBatchGroup } from '@/types';
-import { Play, Download, CheckCircle2, Clock, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { IPopulatedBatchGroup } from '@/types';
+import {
+  Play,
+  Download,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+  ExternalLink,
+  Layers,
+  Sparkles,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 interface BatchProgressProps {
@@ -11,8 +22,9 @@ interface BatchProgressProps {
 }
 
 export function BatchProgress({ batchId }: BatchProgressProps) {
-  const [batch, setBatch] = useState<IBatchGroup | null>(null);
+  const [batch, setBatch] = useState<IPopulatedBatchGroup | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const fetchBatch = async () => {
     try {
@@ -22,13 +34,17 @@ export function BatchProgress({ batchId }: BatchProgressProps) {
         setBatch(data.data);
       }
     } catch {
-      // ignore
+      // ignore network errors during poll
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
+    setLoading(true);
+    setBatch(null);
     fetchBatch();
-    const interval = setInterval(fetchBatch, 2500);
+    const interval = setInterval(fetchBatch, 2000);
     return () => clearInterval(interval);
   }, [batchId]);
 
@@ -38,38 +54,73 @@ export function BatchProgress({ batchId }: BatchProgressProps) {
       const res = await fetch(`/api/batch/${batchId}`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        toast.info('Đã bắt đầu xử lý hàng loạt video trong lô');
-        fetchBatch();
+        toast.info('Đã bắt đầu xử lý hàng loạt video trong lô!');
+        if (data.data) {
+          setBatch(data.data);
+        } else {
+          fetchBatch();
+        }
       } else {
         toast.error(data.error || 'Bắt đầu xử lý thất bại');
       }
     } catch {
-      toast.error('Lỗi kết nối');
+      toast.error('Lỗi kết nối máy chủ');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  if (!batch) {
+  if (loading && !batch) {
     return (
       <div className="flex items-center justify-center p-12 text-[#a1a1aa] text-sm">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+        <Loader2 className="h-5 w-5 animate-spin mr-2 text-[#f97316]" />
         <span>Đang tải thông tin lô video...</span>
       </div>
     );
   }
 
-  const completedCount = batch.items.filter((i) => (i.projectId as any)?.status === 'done').length;
-  const totalCount = batch.items.length;
+  if (!batch) {
+    return (
+      <div className="rounded-2xl border border-[#3f3f46] bg-[#18181b] p-8 text-center text-xs text-[#a1a1aa]">
+        Không tìm thấy thông tin lô video
+      </div>
+    );
+  }
+
+  const completedCount =
+    batch.items?.filter(
+      (i) => i.status === 'done' || (typeof i.projectId === 'object' && i.projectId !== null && i.projectId?.status === 'done')
+    ).length || 0;
+  const totalCount = batch.items?.length || 0;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const isBatchDone = (completedCount === totalCount && totalCount > 0) || batch.status === 'done';
 
   return (
-    <div className="flex flex-col gap-5 p-5 bg-[#18181b] rounded-2xl border border-[#3f3f46]">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#3f3f46] pb-4">
+    <div className="flex flex-col gap-6 p-6 bg-[#18181b] rounded-2xl border border-[#3f3f46]">
+      {/* Batch Header & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#3f3f46] pb-4">
         <div>
-          <h3 className="font-bold text-white text-base">{batch.name || 'Lô video'}</h3>
-          <p className="text-xs text-[#a1a1aa] mt-0.5">
-            Tiến độ: {completedCount}/{totalCount} video đã hoàn thành ({progressPercent}%)
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-white text-base">{batch.name || 'Lô video'}</h3>
+            {isBatchDone ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#22c55e]/15 px-2.5 py-0.5 text-xs font-semibold text-[#22c55e] border border-[#22c55e]/30">
+                <CheckCircle2 className="h-3 w-3" />
+                <span>Hoàn tất 100%</span>
+              </span>
+            ) : batch.status === 'processing' ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#eab308]/15 px-2.5 py-0.5 text-xs font-semibold text-[#eab308] border border-[#eab308]/30 animate-pulse">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>Đang xử lý</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#71717a]/15 px-2.5 py-0.5 text-xs font-medium text-[#a1a1aa] border border-[#71717a]/30">
+                <span>Chờ bắt đầu</span>
+              </span>
+            )}
+          </div>
+
+          <p className="text-xs text-[#a1a1aa] mt-1">
+            Tiến độ lô: {completedCount}/{totalCount} video thành phẩm ({progressPercent}%)
           </p>
         </div>
 
@@ -78,7 +129,7 @@ export function BatchProgress({ batchId }: BatchProgressProps) {
             <a
               href={`/api/batch/${batchId}/export`}
               download
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#22c55e] px-4 py-2 text-xs font-semibold text-black hover:bg-[#16a34a] transition-colors shadow-md"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#22c55e] px-4 py-2 text-xs font-bold text-black hover:bg-[#16a34a] transition-colors shadow-md"
             >
               <Download className="h-4 w-4" />
               <span>Tải trọn bộ .ZIP ({completedCount} video)</span>
@@ -88,13 +139,18 @@ export function BatchProgress({ batchId }: BatchProgressProps) {
           <button
             type="button"
             onClick={handleStartProcessing}
-            disabled={isProcessing || batch.status === 'processing'}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#f97316] px-4 py-2 text-xs font-semibold text-black hover:bg-[#ea580c] transition-colors disabled:opacity-50"
+            disabled={isProcessing || batch.status === 'processing' || isBatchDone}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-[#f97316] px-5 py-2 text-xs font-bold text-black hover:bg-[#ea580c] transition-colors disabled:opacity-50 shadow-md"
           >
             {isProcessing || batch.status === 'processing' ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Đang xử lý tuần tự...</span>
+                <span>Đang xử lý trong BullMQ...</span>
+              </>
+            ) : isBatchDone ? (
+              <>
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Đã xử lý xong toàn bộ</span>
               </>
             ) : (
               <>
@@ -106,70 +162,83 @@ export function BatchProgress({ batchId }: BatchProgressProps) {
         </div>
       </div>
 
-      {/* Overall Progress Bar */}
-      <div className="w-full bg-[#09090b] rounded-full h-2.5 overflow-hidden border border-[#3f3f46]">
-        <div
-          className="bg-gradient-to-r from-[#eab308] to-[#22c55e] h-full rounded-full transition-all duration-300"
-          style={{ width: `${progressPercent}%` }}
-        />
+      {/* Progress Bar */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex justify-between text-xs font-medium text-[#a1a1aa]">
+          <span>Tiến trình hoàn thành toàn lô</span>
+          <span className="font-mono text-white font-bold">{progressPercent}%</span>
+        </div>
+        <div className="w-full bg-[#09090b] rounded-full h-3 overflow-hidden border border-[#3f3f46]">
+          <div
+            className="bg-gradient-to-r from-[#f97316] via-[#eab308] to-[#22c55e] h-full rounded-full transition-all duration-300"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
       </div>
 
       {/* Items List */}
-      <div className="flex flex-col gap-2.5">
-        <span className="text-xs font-semibold text-white">Danh sách video trong lô</span>
+      <div className="flex flex-col gap-3">
+        <span className="text-xs font-semibold text-white">Danh sách chi tiết từng video ({totalCount})</span>
         <div className="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1">
-          {batch.items.map((item, idx) => {
-            const project = item.projectId as any;
-            const status = project?.status || item.status;
+          {batch.items?.map((item, idx) => {
+            const projectObj =
+              typeof item.projectId === 'object' && item.projectId !== null
+                ? item.projectId
+                : null;
+            const projectIdStr =
+              projectObj?._id || (typeof item.projectId === 'string' ? item.projectId : '');
+            const status: string = projectObj?.status || item.status;
 
             return (
               <div
                 key={idx}
-                className="flex items-center justify-between rounded-xl border border-[#3f3f46] bg-[#09090b] p-3 text-xs"
+                className="flex items-center justify-between rounded-xl border border-[#3f3f46] bg-[#09090b] p-3.5 text-xs transition-colors hover:border-[#f97316]/50"
               >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#27272a] text-[11px] font-mono text-[#a1a1aa]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#27272a] text-xs font-mono font-bold text-white">
                     {idx + 1}
                   </span>
-                  <div>
-                    <p className="font-semibold text-white">
-                      {project?.name || `Video #${idx + 1}`}
+                  <div className="min-w-0">
+                    <p className="font-semibold text-white truncate max-w-xs sm:max-w-md">
+                      {projectObj?.name || `Video #${idx + 1}`}
                     </p>
-                    <p className="text-[11px] text-[#a1a1aa] truncate max-w-xs mt-0.5">
-                      {project?.script?.text || 'Chưa có kịch bản'}
+                    <p className="text-[11px] text-[#a1a1aa] truncate max-w-xs sm:max-w-md mt-0.5">
+                      {projectObj?.script?.text || 'Đang tạo kịch bản...'}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 shrink-0">
                   {status === 'done' ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#22c55e]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#22c55e]">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#22c55e]/15 px-2.5 py-0.5 text-xs font-semibold text-[#22c55e] border border-[#22c55e]/30">
                       <CheckCircle2 className="h-3 w-3" />
                       <span>Hoàn tất</span>
                     </span>
                   ) : status === 'rendering' || status === 'processing' ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#eab308]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#eab308] animate-pulse">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#eab308]/15 px-2.5 py-0.5 text-xs font-semibold text-[#eab308] border border-[#eab308]/30 animate-pulse">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       <span>Đang xử lý</span>
                     </span>
                   ) : status === 'error' ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#ef4444]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#ef4444]">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#ef4444]/15 px-2.5 py-0.5 text-xs font-semibold text-[#ef4444] border border-[#ef4444]/30">
                       <AlertCircle className="h-3 w-3" />
                       <span>Lỗi</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#71717a]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#a1a1aa]">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#71717a]/15 px-2.5 py-0.5 text-xs font-medium text-[#a1a1aa] border border-[#71717a]/30">
                       <Clock className="h-3 w-3" />
                       <span>Chờ xử lý</span>
                     </span>
                   )}
 
-                  {project?._id && (
+                  {projectIdStr && (
                     <Link
-                      href={`/projects/${project._id}`}
-                      className="rounded border border-[#3f3f46] bg-[#27272a] px-2.5 py-1 text-[11px] text-white hover:bg-[#3f3f46] transition-colors"
+                      href={`/projects/${projectIdStr}`}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#3f3f46] bg-[#27272a] px-3 py-1 text-xs font-semibold text-white hover:bg-[#3f3f46] transition-colors"
+                      title="Mở vào Studio Editor để chỉnh sửa thủ công"
                     >
-                      Mở Editor
+                      <ExternalLink className="h-3 w-3 text-[#f97316]" />
+                      <span>Mở Editor</span>
                     </Link>
                   )}
                 </div>

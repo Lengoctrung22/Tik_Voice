@@ -1,6 +1,20 @@
+import { IProject } from '@/lib/db/models/Project';
+import { IBatchGroup } from '@/lib/db/models/BatchGroup';
+
 export * from '@/lib/db/models/Project';
 export * from '@/lib/db/models/Job';
 export * from '@/lib/db/models/BatchGroup';
+
+export interface IPopulatedBatchItem {
+  projectId: IProject;
+  order: number;
+  status: 'pending' | 'processing' | 'done' | 'error';
+  error?: string;
+}
+
+export interface IPopulatedBatchGroup extends Omit<IBatchGroup, 'items'> {
+  items: IPopulatedBatchItem[];
+}
 
 export interface TTSOptions {
   voice?: string;

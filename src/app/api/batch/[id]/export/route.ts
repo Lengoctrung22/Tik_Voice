@@ -3,7 +3,7 @@ import { connectDB } from '@/lib/db';
 import { BatchGroup } from '@/lib/db/models/BatchGroup';
 import { Project } from '@/lib/db/models/Project';
 import archiver from 'archiver';
-import { PassThrough } from 'stream';
+import { PassThrough, Readable } from 'stream';
 import fs from 'fs';
 
 export async function GET(
@@ -17,29 +17,43 @@ export async function GET(
     const batch = await BatchGroup.findById(id);
     if (!batch) return new NextResponse('Batch not found', { status: 404 });
 
-    const projectIds = batch.items.map((i: { projectId: string }) => i.projectId);
+    const projectIds = batch.items.map((i: any) =>
+      typeof i.projectId === 'object' && i.projectId !== null ? i.projectId._id : i.projectId
+    );
     const projects = await Project.find({ _id: { $in: projectIds }, status: 'done' });
 
-    if (projects.length === 0) {
-      return new NextResponse('Chưa có video nào trong lô hoàn thành để tải xuống', { status: 400 });
+    const validFiles = projects.filter(
+      (p) => p.export?.path && fs.existsSync(p.export.path)
+    );
+
+    if (validFiles.length === 0) {
+      return new NextResponse('Chưa có tệp video nào trong lô hoàn tất để tải xuống', { status: 400 });
     }
 
     const archive = archiver('zip', { zlib: { level: 6 } });
     const stream = new PassThrough();
 
+    archive.on('error', (err) => {
+      console.error('Archiver error:', err);
+      stream.destroy(err);
+    });
+
     archive.pipe(stream);
 
-    for (const p of projects) {
-      if (p.export?.path && fs.existsSync(p.export.path)) {
-        const safeName = p.name ? p.name.replace(/[^a-zA-Z0-9_-]/g, '_') : 'video';
-        const fileName = `${safeName}_${p._id}.mp4`;
-        archive.file(p.export.path, { name: fileName });
-      }
+    for (const p of validFiles) {
+      const safeName = p.name ? p.name.replace(/[^a-zA-Z0-9_-]/g, '_') : 'video';
+      const fileName = `${safeName}_${p._id}.mp4`;
+      archive.file(p.export!.path, { name: fileName });
     }
 
-    archive.finalize();
+    archive.finalize().catch((err) => {
+      console.error('Archive finalize error:', err);
+      stream.destroy(err);
+    });
 
-    return new NextResponse(stream as unknown as ReadableStream, {
+    const webStream = Readable.toWeb(stream);
+
+    return new NextResponse(webStream as unknown as ReadableStream, {
       headers: {
         'Content-Type': 'application/zip',
         'Content-Disposition': `attachment; filename="tikvoice-batch-${id}.zip"`,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 
 export async function GET(
   request: NextRequest,
@@ -11,8 +12,11 @@ export async function GET(
   const storageRoot = path.resolve(process.env.STORAGE_PATH || './storage');
   const fullPath = path.resolve(storageRoot, relativePath);
 
+  const expectedRoot = path.resolve(process.env.STORAGE_PATH || './storage');
+
   // Ngăn chặn Path Traversal
-  if (!fullPath.startsWith(storageRoot)) {
+  const rel = path.relative(expectedRoot, fullPath);
+  if (!fullPath.startsWith(expectedRoot) || rel.startsWith('..') || path.isAbsolute(rel)) {
     return new NextResponse('Forbidden', { status: 403 });
   }
 
@@ -21,29 +25,52 @@ export async function GET(
   }
 
   const stat = fs.statSync(fullPath);
+  if (!stat.isFile()) {
+    return new NextResponse('File Not Found', { status: 404 });
+  }
+
   const fileSize = stat.size;
   const range = request.headers.get('range');
   const contentType = getContentType(fullPath);
 
   if (range) {
-    const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const cleanRange = range.replace(/^bytes\s*=\s*/, '');
+    const parts = cleanRange.split('-');
+    let start = parts[0] ? parseInt(parts[0], 10) : NaN;
+    let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
 
-    if (start >= fileSize) {
+    // Support suffix range e.g. bytes=-500 (last 500 bytes)
+    if (isNaN(start) && parts[1]) {
+      const suffixLength = parseInt(parts[1], 10);
+      if (!isNaN(suffixLength)) {
+        start = Math.max(0, fileSize - suffixLength);
+        end = fileSize - 1;
+      }
+    }
+
+    if (isNaN(start) || start >= fileSize || start < 0) {
       return new NextResponse('Requested range not satisfiable', {
         status: 416,
         headers: { 'Content-Range': `bytes */${fileSize}` },
       });
     }
 
-    const chunksize = end - start + 1;
-    const fileStream = fs.createReadStream(fullPath, { start, end });
+    const safeEnd = Math.min(end, fileSize - 1);
+    if (safeEnd < start) {
+      return new NextResponse('Requested range not satisfiable', {
+        status: 416,
+        headers: { 'Content-Range': `bytes */${fileSize}` },
+      });
+    }
 
-    return new NextResponse(fileStream as unknown as ReadableStream, {
+    const chunksize = safeEnd - start + 1;
+    const fileStream = fs.createReadStream(fullPath, { start, end: safeEnd });
+    const webStream = Readable.toWeb(fileStream);
+
+    return new NextResponse(webStream as unknown as ReadableStream, {
       status: 206,
       headers: {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Content-Range': `bytes ${start}-${safeEnd}/${fileSize}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunksize.toString(),
         'Content-Type': contentType,
@@ -51,7 +78,8 @@ export async function GET(
     });
   } else {
     const fileStream = fs.createReadStream(fullPath);
-    return new NextResponse(fileStream as unknown as ReadableStream, {
+    const webStream = Readable.toWeb(fileStream);
+    return new NextResponse(webStream as unknown as ReadableStream, {
       status: 200,
       headers: {
         'Content-Length': fileSize.toString(),

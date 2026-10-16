@@ -4,6 +4,8 @@ import path from 'path';
 import { connectDB } from '@/lib/db';
 import { Project } from '@/lib/db/models/Project';
 
+import { Readable } from 'stream';
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -25,13 +27,16 @@ export async function GET(
 
     const stat = fs.statSync(project.export.path);
     const fileStream = fs.createReadStream(project.export.path);
-    const safeName = encodeURIComponent(`${project.name || 'tikvoice'}.mp4`);
+    const webStream = Readable.toWeb(fileStream);
+    const rawName = (project.name || 'tikvoice').trim();
+    const asciiName = (rawName.replace(/[^a-zA-Z0-9_-]/g, '_') || 'video') + '.mp4';
+    const utf8Name = encodeURIComponent(rawName + '.mp4');
 
-    return new NextResponse(fileStream as unknown as ReadableStream, {
+    return new NextResponse(webStream as unknown as ReadableStream, {
       headers: {
         'Content-Type': 'video/mp4',
         'Content-Length': stat.size.toString(),
-        'Content-Disposition': `attachment; filename="${safeName}"; filename*=UTF-8''${safeName}`,
+        'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`,
       },
     });
   } catch (error: unknown) {

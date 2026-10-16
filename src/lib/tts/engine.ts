@@ -1,7 +1,7 @@
 import { TTSOptions, TTSResult, Voice } from '@/types';
 import { SUPPORTED_VOICES, getVoiceById } from './voices';
-import { synthesizeWithEdgeTTS } from './edge-tts';
-import { synthesizeWithGoogleTTS } from './google-tts';
+import { edgeTTSEngine } from './edge-tts';
+import { googleTTSEngine } from './google-tts';
 
 export interface TTSEngine {
   synthesize(text: string, outputPath: string, options?: TTSOptions): Promise<TTSResult>;
@@ -16,14 +16,14 @@ export class DefaultTTSEngine implements TTSEngine {
 
     if (engineType === 'google') {
       try {
-        return await synthesizeWithGoogleTTS(text, outputPath, options);
+        return await googleTTSEngine.synthesize(text, outputPath, options);
       } catch (err) {
         console.warn('Google TTS failed, falling back to Edge TTS:', err);
-        return await synthesizeWithEdgeTTS(text, outputPath, options);
+        return await edgeTTSEngine.synthesize(text, outputPath, options);
       }
     }
 
-    return await synthesizeWithEdgeTTS(text, outputPath, options);
+    return await edgeTTSEngine.synthesize(text, outputPath, options);
   }
 
   async listVoices(): Promise<Voice[]> {
@@ -32,3 +32,4 @@ export class DefaultTTSEngine implements TTSEngine {
 }
 
 export const ttsEngine = new DefaultTTSEngine();
+

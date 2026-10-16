@@ -19,9 +19,10 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/tikvoice
       - REDIS_URL=redis://redis:6379
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-pro}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
       - STORAGE_PATH=/app/storage
+      - MAX_CONCURRENT_RENDERS=${MAX_CONCURRENT_RENDERS:-1}
     restart: unless-stopped
 
   worker:
@@ -41,9 +42,10 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/tikvoice
       - REDIS_URL=redis://redis:6379
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-pro}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
       - STORAGE_PATH=/app/storage
+      - MAX_CONCURRENT_RENDERS=${MAX_CONCURRENT_RENDERS:-1}
     restart: unless-stopped
 
   mongo:

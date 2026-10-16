@@ -1,13 +1,14 @@
 'use client';
 
 import { useEditorStore, EditorTab } from '@/stores/editorStore';
+import { IProject } from '@/types';
 import { FileText, Mic, Subtitles, Music, Rocket, CheckCircle2 } from 'lucide-react';
 
 interface TabItem {
   id: EditorTab;
   label: string;
   icon: typeof FileText;
-  isComplete: (project: any) => boolean;
+  isComplete: (project: IProject | null) => boolean;
 }
 
 const TABS: TabItem[] = [
@@ -27,7 +28,7 @@ const TABS: TabItem[] = [
     id: 'subtitle',
     label: 'Phụ đề',
     icon: Subtitles,
-    isComplete: (p) => Boolean(p?.subtitle?.words?.length > 0),
+    isComplete: (p) => Boolean(p?.subtitle?.words && p.subtitle.words.length > 0),
   },
   {
     id: 'music',

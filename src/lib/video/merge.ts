@@ -20,6 +20,13 @@ export interface DynamicRenderConfig {
 
 export function executeRenderPipeline(config: DynamicRenderConfig): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (!fs.existsSync(config.videoPath)) {
+      return reject(new Error(`Tệp video không tồn tại: ${config.videoPath}`));
+    }
+    if (!fs.existsSync(config.audioPath)) {
+      return reject(new Error(`Tệp audio không tồn tại: ${config.audioPath}`));
+    }
+
     let command = ffmpeg();
 
     // 1. Loop video gốc nếu ngắn hơn giọng đọc TTS
@@ -50,10 +57,11 @@ export function executeRenderPipeline(config: DynamicRenderConfig): Promise<void
       const volume = config.bgMusicVolume ?? 0.12;
       const fadeIn = config.bgMusicFadeIn ?? 2;
       const fadeOut = config.bgMusicFadeOut ?? 3;
-      const fadeOutStart = Math.max(0, config.audioDuration - fadeOut);
+      const actualFadeOut = Math.min(fadeOut, Math.max(0.5, config.audioDuration));
+      const fadeOutStart = Math.max(0, config.audioDuration - actualFadeOut);
 
       filterParts.push(
-        `[2:a]volume=${volume},afade=t=in:st=0:d=${fadeIn},afade=t=out:st=${fadeOutStart}:d=${fadeOut}[bgm]`,
+        `[2:a]volume=${volume},afade=t=in:st=0:d=${fadeIn},afade=t=out:st=${fadeOutStart}:d=${actualFadeOut}[bgm]`,
         `[1:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a0]`
       );
       audioMapOption = '[a0]'; // Khi có filter amix thì map qua nhãn [a0]
@@ -61,11 +69,18 @@ export function executeRenderPipeline(config: DynamicRenderConfig): Promise<void
       audioMapOption = '1:a'; // Không có nhạc nền: map thẳng stream 1:a
     }
 
-    // Xử lý phụ đề ASS kèm fontsdir để tránh lỗi font trên Linux
+    // Xử lý phụ đề ASS kèm fontsdir để tránh lỗi font trên Linux/Windows
     const hasSubtitle = config.subtitleEnabled && config.subtitlePath && fs.existsSync(config.subtitlePath);
     if (hasSubtitle) {
-      const normalizedPath = config.subtitlePath!.replace(/\\/g, '/').replace(/:/g, '\\:');
-      const fontsDir = path.resolve('public/fonts').replace(/\\/g, '/').replace(/:/g, '\\:');
+      const normalizedPath = config.subtitlePath!
+        .replace(/\\/g, '/')
+        .replace(/:/g, '\\:')
+        .replace(/'/g, "'\\\\''");
+      const fontsDir = path
+        .resolve('public/fonts')
+        .replace(/\\/g, '/')
+        .replace(/:/g, '\\:')
+        .replace(/'/g, "'\\\\''");
 
       filterParts.push(
         `[${currentVideoLabel}]ass='${normalizedPath}':fontsdir='${fontsDir}'[vout]`
@@ -85,25 +100,39 @@ export function executeRenderPipeline(config: DynamicRenderConfig): Promise<void
       fs.mkdirSync(outDir, { recursive: true });
     }
 
+    const renderDuration = (config.audioDuration && config.audioDuration > 0)
+      ? config.audioDuration
+      : (config.videoDuration || 30);
+
     command
       .complexFilter(filterParts)
       .outputOptions([
         `-map [${currentVideoLabel}]`,
         `-map ${audioMapOption}`,
         `-c:v libx264`,
+        `-r 30`,
         `-preset ${preset}`,
         `-crf ${crf}`,
         `-c:a aac`,
         `-b:a 192k`,
-        `-t ${config.audioDuration}`,
+        `-t ${renderDuration}`,
         `-movflags +faststart`,
         `-y`,
       ])
       .output(config.outputPath)
       .on('progress', (p) => {
-        if (config.onProgress && p.percent) {
-          config.onProgress(Math.min(100, Math.round(p.percent)));
+        if (!config.onProgress) return;
+        let calculatedPercent = typeof p.percent === 'number' && !isNaN(p.percent) ? p.percent : 0;
+        if (p.timemark && renderDuration > 0) {
+          const parts = p.timemark.split(':');
+          if (parts.length === 3) {
+            const secs = parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+            if (!isNaN(secs)) {
+              calculatedPercent = (secs / renderDuration) * 100;
+            }
+          }
         }
+        config.onProgress(Math.min(100, Math.max(0, Math.round(calculatedPercent))));
       })
       .on('end', () => resolve())
       .on('error', (err) => reject(err))

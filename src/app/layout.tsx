@@ -1,6 +1,14 @@
 import type { Metadata } from 'next';
+import { Be_Vietnam_Pro } from 'next/font/google';
 import './globals.css';
 import { Toaster } from 'sonner';
+
+const beVietnamPro = Be_Vietnam_Pro({
+  weight: ['400', '500', '600', '700', '800', '900'],
+  subsets: ['latin', 'vietnamese'],
+  display: 'swap',
+  variable: '--font-be-vietnam-pro',
+});
 
 export const metadata: Metadata = {
   title: 'TikVoice — AI Video Voice-Over Studio',
@@ -13,8 +21,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className="dark">
-      <body className="min-h-screen bg-[#09090b] text-[#fafafa] antialiased">
+    <html lang="vi" className={`dark ${beVietnamPro.variable}`}>
+      <body className={`${beVietnamPro.className} min-h-screen bg-[#09090b] text-[#fafafa] antialiased`}>
         {children}
         <Toaster
           position="bottom-right"

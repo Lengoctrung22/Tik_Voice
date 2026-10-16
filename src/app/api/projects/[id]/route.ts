@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Project } from '@/lib/db/models/Project';
+import { Job } from '@/lib/db/models/Job';
 import { deleteProjectStorage } from '@/lib/storage/local';
 
 export async function GET(
@@ -16,9 +17,24 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Không tìm thấy dự án' }, { status: 404 });
     }
 
+    let activeJobId: string | null = null;
+    if (project.status === 'rendering') {
+      const activeJob = await Job.findOne({
+        projectId: id,
+        type: 'render',
+        status: { $in: ['queued', 'processing'] },
+      }).sort({ createdAt: -1 });
+      if (activeJob) {
+        activeJobId = activeJob._id;
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      data: project,
+      data: {
+        ...project.toObject(),
+        activeJobId,
+      },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Lỗi lấy thông tin dự án';
@@ -36,6 +52,7 @@ export async function PATCH(
     await connectDB();
 
     const updates = await request.json();
+    delete updates._id;
     const project = await Project.findByIdAndUpdate(id, { $set: updates }, { new: true });
 
     if (!project) {
@@ -68,6 +85,16 @@ export async function DELETE(
 
     // Xóa toàn bộ file vật lý liên quan trong storage
     await deleteProjectStorage(id);
+
+    // Xóa các job liên quan
+    await Job.deleteMany({ projectId: id });
+
+    // Dọn dẹp liên kết trong BatchGroup (nếu có)
+    const { BatchGroup } = await import('@/lib/db/models/BatchGroup');
+    await BatchGroup.updateMany(
+      { 'items.projectId': id },
+      { $pull: { items: { projectId: id } } }
+    );
 
     // Xóa record trong MongoDB
     await Project.findByIdAndDelete(id);

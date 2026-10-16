@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
+import fs from 'fs';
 import { connectDB } from '@/lib/db';
 import { Project } from '@/lib/db/models/Project';
 import { ttsEngine } from '@/lib/tts/engine';
 import { getCategoryPath } from '@/lib/storage/local';
+import { generateAssFile } from '@/lib/video/subtitle';
 
 export async function POST(
   request: NextRequest,
@@ -54,6 +56,15 @@ export async function POST(
     };
 
     project.subtitle.words = result.words;
+
+    // Tự động sinh file .ass mặc định để sẵn sàng cho render
+    const subDir = getCategoryPath('subtitles', id);
+    const subFileName = `sub_${Date.now()}.ass`;
+    const subFilePath = path.join(subDir, subFileName);
+    const assContent = generateAssFile(result.words, project.subtitle.style);
+    await fs.promises.writeFile(subFilePath, assContent, 'utf-8');
+    project.subtitle.path = subFilePath;
+
     if (project.status === 'draft' || project.status === 'scripted') {
       project.status = 'voiced';
     }

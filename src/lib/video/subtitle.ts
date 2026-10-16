@@ -4,7 +4,13 @@ import { IWordTimestamp, ISubtitleStyle } from '@/lib/db/models/Project';
  * Đổi mã màu HEX #RRGGBB hoặc #RRGGBBAA sang định dạng ASS BGR: &H00BBGGRR
  */
 export function hexToAssColor(hex: string): string {
-  const cleanHex = hex.replace('#', '');
+  let cleanHex = (hex || '').replace('#', '').trim();
+  if (cleanHex.length === 3) {
+    cleanHex = cleanHex
+      .split('')
+      .map((c) => c + c)
+      .join('');
+  }
   if (cleanHex.length < 6) return '&H00FFFFFF';
   const r = cleanHex.slice(0, 2);
   const g = cleanHex.slice(2, 4);
@@ -39,7 +45,16 @@ export function generateAssFile(
   const assPrimary = style.highlightEnabled ? highlightColor : primaryColor;
   const assSecondary = style.highlightEnabled ? primaryColor : highlightColor;
 
-  const alignment = style.position === 'top' ? 8 : style.position === 'center' ? 5 : 2;
+  let alignment = 2;
+  const hAlign = style.alignment || 'center';
+  const vAlign = style.position || 'bottom';
+  if (vAlign === 'top') {
+    alignment = hAlign === 'left' ? 7 : hAlign === 'right' ? 9 : 8;
+  } else if (vAlign === 'center') {
+    alignment = hAlign === 'left' ? 4 : hAlign === 'right' ? 6 : 5;
+  } else {
+    alignment = hAlign === 'left' ? 1 : hAlign === 'right' ? 3 : 2;
+  }
 
   let ass = `[Script Info]
 Title: TikVoice Subtitles

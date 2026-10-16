@@ -28,7 +28,7 @@
 body {
   background-color: #09090b;
   color: #fafafa;
-  font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
 }
 

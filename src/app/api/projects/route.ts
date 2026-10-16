@@ -14,9 +14,7 @@ export async function GET() {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     const today = projects.filter((p) => new Date(p.createdAt) >= startOfToday).length;
-    const processing = projects.filter(
-      (p) => p.status === 'rendering' || p.status === 'voiced'
-    ).length;
+    const processing = projects.filter((p) => p.status === 'rendering').length;
 
     return NextResponse.json({
       success: true,

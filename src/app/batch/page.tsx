@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react';
 import { Header } from '@/components/layout/Header';
 import { BatchUploader } from '@/components/batch/BatchUploader';
 import { BatchProgress } from '@/components/batch/BatchProgress';
-import { IBatchGroup } from '@/types';
+import { IPopulatedBatchGroup } from '@/types';
 import { Layers, Plus, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function BatchPage() {
-  const [batches, setBatches] = useState<IBatchGroup[]>([]);
+  const [batches, setBatches] = useState<IPopulatedBatchGroup[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
@@ -79,7 +79,10 @@ export default function BatchPage() {
                 <div className="flex flex-col gap-2">
                   {batches.map((b) => {
                     const isSelected = selectedBatchId === b._id;
-                    const doneCount = b.items?.filter((i) => (i.projectId as any)?.status === 'done').length || 0;
+                    const doneCount =
+                      b.items?.filter(
+                        (i) => i.status === 'done' || (typeof i.projectId === 'object' && i.projectId !== null && (i.projectId as any).status === 'done')
+                      ).length || 0;
                     const totalCount = b.items?.length || 0;
 
                     return (

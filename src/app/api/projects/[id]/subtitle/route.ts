@@ -73,6 +73,11 @@ export async function POST(
     await fs.promises.writeFile(subFilePath, assContent, 'utf-8');
 
     project.subtitle.path = subFilePath;
+
+    if (project.status === 'voiced') {
+      project.status = 'subtitled';
+    }
+
     await project.save();
 
     return NextResponse.json({

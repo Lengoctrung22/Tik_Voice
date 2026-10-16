@@ -83,7 +83,7 @@ Sản phẩm: {productName}
 Thông tin: {productInfo}
 Yêu cầu thêm: {customInstructions}
 
-Quy tắc: Công bằng nhưng có winner rõ ràng, không quá 180 từ, không emoji.
+Quy tắc: Công bằng nhưng có winner rõ ràng, không quá 180 từ, không emoji, không ghi chú đạo diễn.
 Chỉ trả về kịch bản.`,
   },
 
@@ -106,7 +106,7 @@ Sản phẩm: {productName}
 Thông tin: {productInfo}
 Yêu cầu thêm: {customInstructions}
 
-Quy tắc: Năng lượng cao, đếm ngược dứt khoát, không quá 160 từ, không emoji.
+Quy tắc: Năng lượng cao, đếm ngược dứt khoát, không quá 160 từ, không emoji, không ghi chú đạo diễn.
 Chỉ trả về kịch bản.`,
   },
 
@@ -131,10 +131,26 @@ Sản phẩm: {productName}
 Thông tin: {productInfo}
 Yêu cầu thêm: {customInstructions}
 
-Quy tắc: Chân thực, có cảm xúc, không quá 180 từ, không emoji.
+Quy tắc: Chân thực, có cảm xúc, không quá 180 từ, không emoji, không ghi chú đạo diễn.
 Chỉ trả về kịch bản.`,
   },
 };
+
+export function cleanScriptText(text: string): string {
+  return text
+    // Bỏ các chú thích đạo diễn dạng [Hook], (Cười), [Nhạc nền], (nhấn mạnh)
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\([^)]*\)/g, '')
+    // Bỏ emoji Unicode phổ biến để Edge TTS không đọc lỗi
+    .replace(
+      /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu,
+      ''
+    )
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 export async function generateProductScript(params: {
   productName: string;
@@ -152,23 +168,23 @@ export async function generateProductScript(params: {
     .replace('{customInstructions}', params.customInstructions || 'Không có');
 
   const ai = getGeminiClient();
-  const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.5-pro';
+  const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
   try {
     const response = await ai.models.generateContent({
       model: primaryModel,
       contents: prompt,
     });
-    return response.text?.trim() || '';
+    return cleanScriptText(response.text?.trim() || '');
   } catch (error) {
     console.warn(
-      `[Gemini] Model ${primaryModel} gặp lỗi hoặc vượt quota, tự động fallback sang gemini-2.0-flash:`,
+      `[Gemini] Model ${primaryModel} gặp lỗi, tự động thử lại với gemini-2.0-flash:`,
       error
     );
     const fallbackResponse = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
       contents: prompt,
     });
-    return fallbackResponse.text?.trim() || '';
+    return cleanScriptText(fallbackResponse.text?.trim() || '');
   }
 }

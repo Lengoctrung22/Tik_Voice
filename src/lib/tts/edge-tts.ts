@@ -1,6 +1,8 @@
 import { spawn } from 'child_process';
 import path from 'path';
-import { TTSOptions, TTSResult } from '@/types';
+import { TTSOptions, TTSResult, Voice } from '@/types';
+import type { TTSEngine } from './engine';
+import { SUPPORTED_VOICES } from './voices';
 
 export async function synthesizeWithEdgeTTS(
   text: string,
@@ -26,7 +28,7 @@ export async function synthesizeWithEdgeTTS(
 
   return new Promise((resolve, reject) => {
     const pythonExe = process.platform === 'win32' ? 'python' : 'python3';
-    const proc = spawn(pythonExe, [scriptPath, payload]);
+    const proc = spawn(pythonExe, [scriptPath, '-']);
 
     let stdoutData = '';
     let stderrData = '';
@@ -64,5 +66,21 @@ export async function synthesizeWithEdgeTTS(
     proc.on('error', (err: Error) => {
       reject(new Error(`Failed to spawn Python process for Edge TTS: ${err.message}`));
     });
+
+    proc.stdin.write(payload, 'utf-8');
+    proc.stdin.end();
   });
 }
+
+export class EdgeTTSEngine implements TTSEngine {
+  async synthesize(text: string, outputPath: string, options?: TTSOptions): Promise<TTSResult> {
+    return synthesizeWithEdgeTTS(text, outputPath, options);
+  }
+
+  async listVoices(): Promise<Voice[]> {
+    return SUPPORTED_VOICES.filter((v) => v.engine === 'edge');
+  }
+}
+
+export const edgeTTSEngine = new EdgeTTSEngine();
+

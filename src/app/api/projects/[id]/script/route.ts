@@ -54,7 +54,9 @@ export async function POST(
 
     let finalScriptText = text || '';
 
-    if (body.generateWithAI || templateId) {
+    const isManualSave = typeof text === 'string' && text.trim().length > 0 && !body.generateWithAI;
+
+    if (!isManualSave && (body.generateWithAI || !finalScriptText)) {
       if (!productName) {
         return NextResponse.json(
           { success: false, error: 'Vui lòng nhập tên sản phẩm để AI viết kịch bản' },

@@ -27,8 +27,18 @@ interface Props {
 }
 
 export default function ProjectEditorClient({ id }: Props) {
-  const { project, setProject, activeTab, setActiveTab, isRendering, renderProgress } =
-    useEditorStore();
+  const {
+    project,
+    setProject,
+    activeTab,
+    setActiveTab,
+    isRendering,
+    setIsRendering,
+    renderProgress,
+    setRenderProgress,
+    activeJobId,
+    setActiveJobId,
+  } = useEditorStore();
 
   const [loading, setLoading] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -51,7 +61,63 @@ export default function ProjectEditorClient({ id }: Props) {
       .finally(() => {
         setLoading(false);
       });
+
+    return () => {
+      setProject(null);
+      useEditorStore.getState().setIsPlaying(false);
+      useEditorStore.getState().setCurrentTime(0);
+      useEditorStore.getState().setActiveJobId(null);
+      useEditorStore.getState().setIsRendering(false);
+      useEditorStore.getState().setRenderProgress(0);
+    };
   }, [id, setProject]);
+
+  // Persistent BullMQ Job Polling across all tabs
+  useEffect(() => {
+    if (!activeJobId || !isRendering) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/jobs/${activeJobId}`);
+        const data = await res.json();
+        if (data.success && data.data) {
+          const job = data.data;
+          setRenderProgress(job.progress || 0);
+
+          if (job.status === 'done') {
+            setIsRendering(false);
+            setRenderProgress(100);
+            setActiveJobId(null);
+            toast.success('Render video hoàn tất! Bạn có thể xem ngay trên màn hình hoặc tải về.');
+
+            // Refresh project details from database
+            const pRes = await fetch(`/api/projects/${id}`);
+            const pData = await pRes.json();
+            if (pData.success && pData.data) {
+              setProject(pData.data);
+              useEditorStore.getState().setPreviewMode('export');
+            }
+          } else if (job.status === 'error') {
+            setIsRendering(false);
+            setActiveJobId(null);
+            toast.error(job.error || 'Quá trình render thất bại');
+          }
+        }
+      } catch {
+        // network polling retry
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [
+    activeJobId,
+    isRendering,
+    id,
+    setProject,
+    setIsRendering,
+    setRenderProgress,
+    setActiveJobId,
+  ]);
 
   const handleSaveName = async () => {
     setIsEditingName(false);
@@ -155,6 +221,8 @@ export default function ProjectEditorClient({ id }: Props) {
               <span className="text-[#eab308] flex items-center gap-1">
                 <Loader2 className="h-3 w-3 animate-spin" /> Đang render
               </span>
+            ) : project.status === 'subtitled' ? (
+              <span className="text-cyan-400">Đã có phụ đề</span>
             ) : project.status === 'voiced' ? (
               <span className="text-blue-400">Đã tạo giọng</span>
             ) : project.status === 'scripted' ? (

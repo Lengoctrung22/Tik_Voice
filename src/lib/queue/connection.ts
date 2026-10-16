@@ -1,6 +1,14 @@
-import { ConnectionOptions } from 'bullmq';
+import { Redis } from 'ioredis';
+import type { ConnectionOptions } from 'bullmq';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+
+export function createRedisClient(): Redis {
+  return new Redis(REDIS_URL, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  });
+}
 
 export function getRedisConnectionOptions(): ConnectionOptions {
   try {

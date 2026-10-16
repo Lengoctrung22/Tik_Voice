@@ -1,7 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { TextToSpeechClient } from '@google-cloud/text-to-speech';
-import { TTSOptions, TTSResult } from '@/types';
+import { TTSOptions, TTSResult, Voice } from '@/types';
+import type { TTSEngine } from './engine';
+import { SUPPORTED_VOICES } from './voices';
 
 export async function synthesizeWithGoogleTTS(
   text: string,
@@ -10,11 +12,19 @@ export async function synthesizeWithGoogleTTS(
 ): Promise<TTSResult> {
   if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.GOOGLE_CLOUD_API_KEY) {
     throw new Error(
-      'Google Cloud TTS requires GOOGLE_APPLICATION_CREDENTIALS to be configured in .env'
+      'Google Cloud TTS requires GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_CLOUD_API_KEY to be configured in .env'
     );
   }
 
-  const client = new TextToSpeechClient();
+  const clientOptions: { apiKey?: string; keyFilename?: string } = {};
+  if (process.env.GOOGLE_CLOUD_API_KEY) {
+    clientOptions.apiKey = process.env.GOOGLE_CLOUD_API_KEY;
+  }
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    clientOptions.keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  }
+
+  const client = new TextToSpeechClient(clientOptions);
   const voiceName = options?.voice || 'vi-VN-Wavenet-A';
   const speed = options?.speed ?? 1.0;
   const pitch = options?.pitch ?? 0;
@@ -67,3 +77,16 @@ export async function synthesizeWithGoogleTTS(
     words,
   };
 }
+
+export class GoogleTTSEngine implements TTSEngine {
+  async synthesize(text: string, outputPath: string, options?: TTSOptions): Promise<TTSResult> {
+    return synthesizeWithGoogleTTS(text, outputPath, options);
+  }
+
+  async listVoices(): Promise<Voice[]> {
+    return SUPPORTED_VOICES.filter((v) => v.engine === 'google');
+  }
+}
+
+export const googleTTSEngine = new GoogleTTSEngine();
+

@@ -2,6 +2,8 @@ import { GoogleGenAI } from '@google/genai';
 
 let aiInstance: GoogleGenAI | null = null;
 
+export const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+
 export function getGeminiClient(): GoogleGenAI {
   if (aiInstance) return aiInstance;
 
