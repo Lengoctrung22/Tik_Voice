@@ -152,10 +152,23 @@ export async function generateProductScript(params: {
     .replace('{customInstructions}', params.customInstructions || 'Không có');
 
   const ai = getGeminiClient();
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
-    contents: prompt,
-  });
+  const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.5-pro';
 
-  return response.text?.trim() || '';
+  try {
+    const response = await ai.models.generateContent({
+      model: primaryModel,
+      contents: prompt,
+    });
+    return response.text?.trim() || '';
+  } catch (error) {
+    console.warn(
+      `[Gemini] Model ${primaryModel} gặp lỗi hoặc vượt quota, tự động fallback sang gemini-2.0-flash:`,
+      error
+    );
+    const fallbackResponse = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: prompt,
+    });
+    return fallbackResponse.text?.trim() || '';
+  }
 }

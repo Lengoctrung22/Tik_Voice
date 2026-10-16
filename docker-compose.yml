@@ -19,6 +19,7 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/tikvoice
       - REDIS_URL=redis://redis:6379
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-pro}
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
       - STORAGE_PATH=/app/storage
     restart: unless-stopped
@@ -40,6 +41,7 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/tikvoice
       - REDIS_URL=redis://redis:6379
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-pro}
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
       - STORAGE_PATH=/app/storage
     restart: unless-stopped
