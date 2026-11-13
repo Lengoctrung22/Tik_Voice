@@ -1,252 +1,286 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { IPopulatedBatchGroup } from '@/types';
 import {
-  Play,
+  Archive,
   Download,
-  CheckCircle2,
-  Clock,
+  ExternalLink,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
   AlertCircle,
   Loader2,
-  RefreshCw,
-  ExternalLink,
-  Layers,
-  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
+import { StatusBadge } from '@/components/ui/status-badge';
+import type { IPopulatedBatchGroup, IProject } from '@/types';
 
 interface BatchProgressProps {
-  batchId: string;
+  batch: IPopulatedBatchGroup;
+  onBatchUpdated: (batch: IPopulatedBatchGroup) => void;
+  onBatchDeleted: (batchId: string) => void;
 }
 
-export function BatchProgress({ batchId }: BatchProgressProps) {
-  const [batch, setBatch] = useState<IPopulatedBatchGroup | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [loading, setLoading] = useState(true);
+export function BatchProgress({
+  batch,
+  onBatchUpdated,
+  onBatchDeleted,
+}: BatchProgressProps) {
+  const [refreshing, setRefreshing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const fetchBatch = async () => {
+  const hasActiveItems = batch.items.some(
+    (item) => item.status === 'processing' || item.status === 'pending'
+  );
+  const shouldPoll = batch.status === 'processing' || (batch.status === 'pending' && hasActiveItems);
+
+  const fetchLatest = useCallback(async () => {
     try {
-      const res = await fetch(`/api/batch/${batchId}`);
-      const data = await res.json();
-      if (data.success && data.data) {
-        setBatch(data.data);
+      const res = await fetch(`/api/batch/${batch._id}`);
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: IPopulatedBatchGroup;
+      };
+      if (json.success && json.data) {
+        onBatchUpdated(json.data);
       }
     } catch {
-      // ignore network errors during poll
-    } finally {
-      setLoading(false);
+      // Ignore transient network errors
     }
-  };
+  }, [batch._id, onBatchUpdated]);
 
+  // Chỉ poll khi lô đang chạy; dừng hẳn khi terminal (done/error và không còn item processing)
   useEffect(() => {
-    setLoading(true);
-    setBatch(null);
-    fetchBatch();
-    const interval = setInterval(fetchBatch, 2000);
-    return () => clearInterval(interval);
-  }, [batchId]);
+    if (!shouldPoll) return;
+    const timer = window.setInterval(fetchLatest, 2500);
+    return () => window.clearInterval(timer);
+  }, [fetchLatest, shouldPoll]);
 
-  const handleStartProcessing = async () => {
+  const handleManualRefresh = async () => {
+    setRefreshing(true);
+    await fetchLatest();
+    setRefreshing(false);
+  };
+
+  const handleRetryErrors = async () => {
+    setRetrying(true);
     try {
-      setIsProcessing(true);
-      const res = await fetch(`/api/batch/${batchId}`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        toast.info('Đã bắt đầu xử lý hàng loạt video trong lô!');
-        if (data.data) {
-          setBatch(data.data);
-        } else {
-          fetchBatch();
-        }
-      } else {
-        toast.error(data.error || 'Bắt đầu xử lý thất bại');
+      const res = await fetch(`/api/batch/${batch._id}/retry`, { method: 'POST' });
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: IPopulatedBatchGroup;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.data) {
+        toast.error(json.error || 'Thử lại thất bại');
+        return;
       }
+      onBatchUpdated(json.data);
+      toast.success(json.message || 'Đã đưa các mục lỗi vào hàng đợi xử lý lại');
     } catch {
-      toast.error('Lỗi kết nối máy chủ');
+      toast.error('Lỗi kết nối khi thử lại');
     } finally {
-      setIsProcessing(false);
+      setRetrying(false);
     }
   };
 
-  if (loading && !batch) {
-    return (
-      <div className="flex items-center justify-center p-12 text-[#a1a1aa] text-sm">
-        <Loader2 className="h-5 w-5 animate-spin mr-2 text-[#f97316]" />
-        <span>Đang tải thông tin lô video...</span>
-      </div>
-    );
-  }
+  const handleDeleteBatch = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/batch/${batch._id}`, { method: 'DELETE' });
+      const json = (await res.json()) as { success: boolean; error?: string };
+      if (!res.ok || !json.success) {
+        toast.error(json.error || 'Không thể xóa lô video');
+        return;
+      }
+      setConfirmDeleteOpen(false);
+      toast.success('Đã xóa lô xử lý hàng loạt');
+      onBatchDeleted(batch._id);
+    } catch {
+      toast.error('Lỗi kết nối khi xóa lô');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
-  if (!batch) {
-    return (
-      <div className="rounded-2xl border border-[#3f3f46] bg-[#18181b] p-8 text-center text-xs text-[#a1a1aa]">
-        Không tìm thấy thông tin lô video
-      </div>
-    );
-  }
-
-  const completedCount =
-    batch.items?.filter(
-      (i) => i.status === 'done' || (typeof i.projectId === 'object' && i.projectId !== null && i.projectId?.status === 'done')
-    ).length || 0;
-  const totalCount = batch.items?.length || 0;
-  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-  const isBatchDone = (completedCount === totalCount && totalCount > 0) || batch.status === 'done';
+  const totalCount = batch.items.length;
+  const doneCount = batch.items.filter((i) => i.status === 'done').length;
+  const errorCount = batch.items.filter((i) => i.status === 'error').length;
+  const progressPct = totalCount > 0 ? Math.round(((doneCount + errorCount) / totalCount) * 100) : 0;
 
   return (
-    <div className="flex flex-col gap-6 p-6 bg-[#18181b] rounded-2xl border border-[#3f3f46]">
-      {/* Batch Header & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#3f3f46] pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-bold text-white text-base">{batch.name || 'Lô video'}</h3>
-            {isBatchDone ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#22c55e]/15 px-2.5 py-0.5 text-xs font-semibold text-[#22c55e] border border-[#22c55e]/30">
-                <CheckCircle2 className="h-3 w-3" />
-                <span>Hoàn tất 100%</span>
-              </span>
-            ) : batch.status === 'processing' ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#eab308]/15 px-2.5 py-0.5 text-xs font-semibold text-[#eab308] border border-[#eab308]/30 animate-pulse">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                <span>Đang xử lý</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#71717a]/15 px-2.5 py-0.5 text-xs font-medium text-[#a1a1aa] border border-[#71717a]/30">
-                <span>Chờ bắt đầu</span>
-              </span>
-            )}
+    <div className="space-y-4">
+      <div className="rounded-xl border border-white/[0.08] bg-[#111113] p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-base font-bold text-[#fafafa]">{batch.name}</h2>
+              <StatusBadge status={batch.status} />
+            </div>
+            <p className="mt-1 text-xs text-[#a1a1aa] tabular-nums">
+              Hoàn tất {doneCount}/{totalCount} video
+              {errorCount > 0 ? ` | ${errorCount} mục gặp lỗi` : ''}
+            </p>
           </div>
 
-          <p className="text-xs text-[#a1a1aa] mt-1">
-            Tiến độ lô: {completedCount}/{totalCount} video thành phẩm ({progressPercent}%)
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {completedCount > 0 && (
-            <a
-              href={`/api/batch/${batchId}/export`}
-              download
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#22c55e] px-4 py-2 text-xs font-bold text-black hover:bg-[#16a34a] transition-colors shadow-md"
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleManualRefresh}
+              disabled={refreshing}
+              className="gap-1.5"
             >
-              <Download className="h-4 w-4" />
-              <span>Tải trọn bộ .ZIP ({completedCount} video)</span>
-            </a>
-          )}
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              <span>Làm mới</span>
+            </Button>
 
-          <button
-            type="button"
-            onClick={handleStartProcessing}
-            disabled={isProcessing || batch.status === 'processing' || isBatchDone}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-[#f97316] px-5 py-2 text-xs font-bold text-black hover:bg-[#ea580c] transition-colors disabled:opacity-50 shadow-md"
-          >
-            {isProcessing || batch.status === 'processing' ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Đang xử lý trong BullMQ...</span>
-              </>
-            ) : isBatchDone ? (
-              <>
-                <CheckCircle2 className="h-4 w-4" />
-                <span>Đã xử lý xong toàn bộ</span>
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4 fill-current" />
-                <span>Bắt đầu xử lý hàng loạt</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Progress Bar */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex justify-between text-xs font-medium text-[#a1a1aa]">
-          <span>Tiến trình hoàn thành toàn lô</span>
-          <span className="font-mono text-white font-bold">{progressPercent}%</span>
-        </div>
-        <div className="w-full bg-[#09090b] rounded-full h-3 overflow-hidden border border-[#3f3f46]">
-          <div
-            className="bg-gradient-to-r from-[#f97316] via-[#eab308] to-[#22c55e] h-full rounded-full transition-all duration-300"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Items List */}
-      <div className="flex flex-col gap-3">
-        <span className="text-xs font-semibold text-white">Danh sách chi tiết từng video ({totalCount})</span>
-        <div className="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1">
-          {batch.items?.map((item, idx) => {
-            const projectObj =
-              typeof item.projectId === 'object' && item.projectId !== null
-                ? item.projectId
-                : null;
-            const projectIdStr =
-              projectObj?._id || (typeof item.projectId === 'string' ? item.projectId : '');
-            const status: string = projectObj?.status || item.status;
-
-            return (
-              <div
-                key={idx}
-                className="flex items-center justify-between rounded-xl border border-[#3f3f46] bg-[#09090b] p-3.5 text-xs transition-colors hover:border-[#f97316]/50"
+            {errorCount > 0 && (
+              <Button
+                size="sm"
+                variant="accent"
+                onClick={handleRetryErrors}
+                disabled={retrying}
+                className="gap-1.5"
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#27272a] text-xs font-mono font-bold text-white">
+                {retrying ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                <span>Thử lại mục lỗi ({errorCount})</span>
+              </Button>
+            )}
+
+            {doneCount > 0 && (
+              <a
+                href={`/api/batch/${batch._id}/export`}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-500 px-3 text-[11px] font-bold text-black hover:bg-emerald-400 transition-colors"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                <span>Tải tất cả (.ZIP)</span>
+              </a>
+            )}
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setConfirmDeleteOpen(true)}
+              aria-label="Xóa lô này"
+              className="text-[#9ca3af] hover:text-red-400 hover:border-red-500/30"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Batch Overall Progress Bar */}
+        <div className="space-y-1">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-[#18181b]">
+            <div
+              className={`h-full transition-all duration-300 ${
+                errorCount > 0 && doneCount === 0
+                  ? 'bg-red-500'
+                  : doneCount === totalCount && totalCount > 0
+                  ? 'bg-emerald-500'
+                  : 'bg-[#f97316]'
+              }`}
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Item List */}
+      <div className="space-y-2.5">
+        {batch.items.map((item, idx) => {
+          const proj =
+            typeof item.projectId === 'object' && item.projectId !== null
+              ? (item.projectId as IProject)
+              : null;
+          const projId = proj?._id || (typeof item.projectId === 'string' ? item.projectId : '');
+          const projName = proj?.name || `Video #${idx + 1}`;
+
+          return (
+            <div
+              key={`${projId}_${idx}`}
+              className="rounded-xl border border-white/[0.08] bg-[#111113] p-3.5 space-y-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#18181b] font-mono text-[11px] font-bold text-[#a1a1aa]">
                     {idx + 1}
                   </span>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-white truncate max-w-xs sm:max-w-md">
-                      {projectObj?.name || `Video #${idx + 1}`}
-                    </p>
-                    <p className="text-[11px] text-[#a1a1aa] truncate max-w-xs sm:max-w-md mt-0.5">
-                      {projectObj?.script?.text || 'Đang tạo kịch bản...'}
-                    </p>
-                  </div>
+                  <span className="truncate text-xs font-semibold text-[#fafafa]">
+                    {projName}
+                  </span>
+                  <StatusBadge status={item.status} />
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0">
-                  {status === 'done' ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#22c55e]/15 px-2.5 py-0.5 text-xs font-semibold text-[#22c55e] border border-[#22c55e]/30">
-                      <CheckCircle2 className="h-3 w-3" />
-                      <span>Hoàn tất</span>
-                    </span>
-                  ) : status === 'rendering' || status === 'processing' ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#eab308]/15 px-2.5 py-0.5 text-xs font-semibold text-[#eab308] border border-[#eab308]/30 animate-pulse">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>Đang xử lý</span>
-                    </span>
-                  ) : status === 'error' ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#ef4444]/15 px-2.5 py-0.5 text-xs font-semibold text-[#ef4444] border border-[#ef4444]/30">
-                      <AlertCircle className="h-3 w-3" />
-                      <span>Lỗi</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#71717a]/15 px-2.5 py-0.5 text-xs font-medium text-[#a1a1aa] border border-[#71717a]/30">
-                      <Clock className="h-3 w-3" />
-                      <span>Chờ xử lý</span>
-                    </span>
-                  )}
-
-                  {projectIdStr && (
+                {projId && (
+                  <div className="flex items-center gap-1.5">
+                    {item.status === 'done' && (
+                      <a
+                        href={`/api/projects/${projId}/export`}
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/12 px-2.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/25"
+                      >
+                        <Download className="h-3 w-3" />
+                        <span>Tải MP4</span>
+                      </a>
+                    )}
                     <Link
-                      href={`/projects/${projectIdStr}`}
-                      className="inline-flex items-center gap-1 rounded-lg border border-[#3f3f46] bg-[#27272a] px-3 py-1 text-xs font-semibold text-white hover:bg-[#3f3f46] transition-colors"
-                      title="Mở vào Studio Editor để chỉnh sửa thủ công"
+                      href={`/projects/${projId}`}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-white/[0.1] bg-[#18181b] px-2.5 text-[11px] font-medium text-[#d4d4d8] hover:text-white hover:bg-[#27272a]"
                     >
-                      <ExternalLink className="h-3 w-3 text-[#f97316]" />
-                      <span>Mở Editor</span>
+                      <ExternalLink className="h-3 w-3" />
+                      <span>Mở Studio</span>
                     </Link>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
-            );
-          })}
-        </div>
+
+              {item.status === 'error' && item.error && (
+                <div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-300">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>{item.error}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
+
+      <Dialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="Xóa lô xử lý hàng loạt?"
+        description="Thao tác này chỉ xóa danh sách lô, các dự án đã tạo vẫn được giữ lại ở trang Dự án."
+      >
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setConfirmDeleteOpen(false)}
+            disabled={deleting}
+          >
+            Giữ lại
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleDeleteBatch}
+            disabled={deleting}
+          >
+            {deleting ? 'Đang xóa...' : 'Xác nhận xóa'}
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }

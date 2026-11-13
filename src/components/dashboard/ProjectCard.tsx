@@ -1,235 +1,239 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { IProject } from '@/types';
-import { formatDuration, formatFileSize } from '@/lib/utils';
 import {
-  Play,
+  Film,
+  Mic,
   Trash2,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Subtitles,
+  Copy,
+  Download,
   ExternalLink,
+  Clock,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { ProjectDTO } from '@/types';
+import { formatDuration, resolveMediaUrl } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { getVoiceById } from '@/lib/tts/voices';
 
 interface ProjectCardProps {
-  project: IProject;
-  onDeleted?: (id: string) => void;
+  project: ProjectDTO;
+  onDelete: (id: string) => Promise<void>;
+  onDuplicated?: (newProject: ProjectDTO) => void;
 }
 
-export function ProjectCard({ project, onDeleted }: ProjectCardProps) {
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+export function ProjectCard({ project, onDelete, onDuplicated }: ProjectCardProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
+  const [thumbFailed, setThumbFailed] = useState(false);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'done':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[#22c55e]/15 px-2 py-0.5 text-xs font-semibold text-[#22c55e] border border-[#22c55e]/30">
-            <CheckCircle2 className="h-3 w-3" />
-            <span>Hoàn tất</span>
-          </span>
-        );
-      case 'rendering':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[#eab308]/15 px-2 py-0.5 text-xs font-semibold text-[#eab308] border border-[#eab308]/30 animate-pulse">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            <span>Đang render</span>
-          </span>
-        );
-      case 'subtitled':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/15 px-2 py-0.5 text-xs font-medium text-cyan-400 border border-cyan-500/30">
-            <Subtitles className="h-3 w-3" />
-            <span>Đã có phụ đề</span>
-          </span>
-        );
-      case 'voiced':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-400 border border-blue-500/30">
-            <span>Đã tạo giọng</span>
-          </span>
-        );
-      case 'scripted':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/15 px-2 py-0.5 text-xs font-medium text-purple-400 border border-purple-500/30">
-            <span>Có kịch bản</span>
-          </span>
-        );
-      case 'error':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[#ef4444]/15 px-2 py-0.5 text-xs font-medium text-[#ef4444] border border-[#ef4444]/30">
-            <AlertCircle className="h-3 w-3" />
-            <span>Lỗi</span>
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[#71717a]/15 px-2 py-0.5 text-xs font-medium text-[#a1a1aa] border border-[#71717a]/30">
-            <span>Bản nháp</span>
-          </span>
-        );
+  const rawThumbPath = project.export?.thumbnailPath || project.video?.thumbnailPath;
+  const thumbUrl = !thumbFailed ? resolveMediaUrl(rawThumbPath) : '';
+
+  const voiceInfo = project.tts?.voice ? getVoiceById(project.tts.voice) : undefined;
+  const voiceLabel = project.tts?.isCustomAudio
+    ? 'Giọng tự thu âm'
+    : voiceInfo?.name || 'Hoài My';
+
+  const durationSeconds = project.tts?.audioDuration || project.video?.duration || 0;
+
+  const updatedLabel = (() => {
+    try {
+      return new Date(project.updatedAt).toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
     }
-  };
+  })();
 
   const handleConfirmDelete = async () => {
+    setDeleting(true);
     try {
-      setIsDeleting(true);
-      const res = await fetch(`/api/projects/${project._id}`, { method: 'DELETE' });
-      const data = await res.json();
-
-      if (data.success) {
-        toast.success('Đã xóa dự án thành công');
-        setShowDeleteModal(false);
-        onDeleted?.(project._id);
-      } else {
-        toast.error(data.error || 'Xóa dự án thất bại');
-      }
-    } catch {
-      toast.error('Lỗi kết nối khi xóa dự án');
+      await onDelete(project._id);
+      setConfirmOpen(false);
     } finally {
-      setIsDeleting(false);
+      setDeleting(false);
     }
   };
 
-  const durationSec = Math.max(
-    project.tts?.audioDuration || 0,
-    project.video?.duration || 0
-  );
-
-  // Video source for thumbnail preview
-  const previewSrc = project.export?.path
-    ? `/api/files/exports/${project._id}/${encodeURIComponent(
-        project.export.path.split(/[\\/]/).pop() || ''
-      )}#t=0.5`
-    : project.video?.path
-    ? `/api/files/uploads/${project._id}/${encodeURIComponent(
-        project.video.path.split(/[\\/]/).pop() || ''
-      )}#t=0.5`
-    : '';
+  const handleDuplicate = async () => {
+    setDuplicating(true);
+    try {
+      const res = await fetch(`/api/projects/${project._id}/duplicate`, {
+        method: 'POST',
+      });
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: ProjectDTO;
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.data) {
+        toast.error(json.error || 'Không thể nhân bản dự án');
+        return;
+      }
+      toast.success('Đã nhân bản dự án thành công');
+      onDuplicated?.(json.data);
+    } catch {
+      toast.error('Lỗi kết nối khi nhân bản dự án');
+    } finally {
+      setDuplicating(false);
+    }
+  };
 
   return (
     <>
-      <div className="group relative flex flex-col overflow-hidden rounded-xl border border-[#3f3f46] bg-[#18181b] transition-all hover:border-[#f97316]/60 hover:bg-[#27272a]/60 shadow-sm">
-        {/* 9:16 Video Thumbnail Container */}
+      <article className="group flex gap-3.5 rounded-xl border border-white/[0.08] bg-[#111113] p-3 transition-colors hover:border-white/[0.16] hover:bg-[#141417]">
+        {/* Thumbnail 9:16 nhẹ (JPEG static - không load video nặng) */}
         <Link
           href={`/projects/${project._id}`}
-          className="relative aspect-[9/16] w-full max-h-56 bg-black flex items-center justify-center overflow-hidden cursor-pointer"
+          className="relative aspect-[9/16] w-[74px] shrink-0 overflow-hidden rounded-lg bg-[#18181b] border border-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f97316]"
         >
-          {previewSrc ? (
-            <video
-              src={previewSrc}
-              preload="metadata"
-              muted
-              playsInline
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          {thumbUrl ? (
+            <img
+              src={thumbUrl}
+              alt={project.name}
+              loading="lazy"
+              onError={() => setThumbFailed(true)}
+              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
             />
           ) : (
-            <div className="flex flex-col items-center justify-center text-[#71717a] p-4 text-center">
-              <Play className="h-8 w-8 mb-1 opacity-30" />
-              <span className="text-[11px]">Chưa tải video</span>
+            <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-[#9ca3af]">
+              <Film className="h-5 w-5" />
+              <span className="text-[9px] font-medium">9:16</span>
             </div>
           )}
 
-          <div className="absolute top-2 left-2 z-10">{getStatusBadge(project.status)}</div>
-
-          {durationSec > 0 && (
-            <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-0.5 text-[11px] font-mono text-white backdrop-blur-sm">
-              <Clock className="h-3 w-3 text-[#f97316]" />
-              <span>{formatDuration(durationSec)}</span>
-            </div>
+          {durationSeconds > 0 && (
+            <span className="absolute bottom-1 right-1 rounded bg-black/75 px-1 py-0.5 font-mono text-[10px] font-semibold text-white tabular-nums backdrop-blur-sm">
+              {formatDuration(durationSeconds)}
+            </span>
           )}
         </Link>
 
-        {/* Info details */}
-        <div className="flex flex-1 flex-col justify-between p-3">
-          <div>
-            <Link
-              href={`/projects/${project._id}`}
-              className="font-semibold text-xs text-white line-clamp-1 group-hover:text-[#f97316] transition-colors"
-              title={project.name || 'Dự án chưa đặt tên'}
-            >
-              {project.name || 'Dự án chưa đặt tên'}
-            </Link>
-            <p className="mt-1 text-[11px] text-[#a1a1aa] line-clamp-2">
-              {project.script?.text || 'Chưa soạn thảo kịch bản...'}
-            </p>
-          </div>
-
-          <div className="mt-3 pt-2 border-t border-[#3f3f46]/60 flex items-center justify-between text-[11px] text-[#71717a]">
-            <span>{formatFileSize(project.export?.fileSize || project.video?.fileSize)}</span>
-
-            <div className="flex items-center gap-1">
+        {/* Nội dung & thao tác */}
+        <div className="flex min-w-0 flex-1 flex-col justify-between gap-2">
+          <div className="space-y-1.5">
+            <div className="flex items-start justify-between gap-2">
               <Link
                 href={`/projects/${project._id}`}
-                className="p-1.5 text-[#a1a1aa] hover:text-[#f97316] hover:bg-[#3f3f46]/50 rounded transition-colors"
-                title="Mở Studio Editor"
+                className="truncate text-sm font-semibold text-[#fafafa] hover:text-[#f97316] transition-colors focus-visible:outline-none focus-visible:underline"
+                title={project.name}
               >
-                <ExternalLink className="h-3.5 w-3.5" />
+                {project.name}
               </Link>
+              <StatusBadge status={project.status} />
+            </div>
+
+            {project.script?.text ? (
+              <p className="line-clamp-2 text-[11px] leading-relaxed text-[#a1a1aa]">
+                {project.script.text}
+              </p>
+            ) : (
+              <p className="text-[11px] italic text-[#9ca3af]">
+                Chưa có kịch bản lồng tiếng
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#9ca3af]">
+              <span className="inline-flex items-center gap-1">
+                <Mic className="h-3 w-3 text-[#a1a1aa]" />
+                {voiceLabel}
+              </span>
+              {updatedLabel && (
+                <span className="inline-flex items-center gap-1 tabular-nums">
+                  <Clock className="h-3 w-3" />
+                  {updatedLabel}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 pt-1 border-t border-white/[0.06]">
+              <Link
+                href={`/projects/${project._id}`}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-[#27272a] px-2.5 py-1.5 text-[11px] font-semibold text-[#fafafa] transition-colors hover:bg-[#3f3f46] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f97316]"
+              >
+                <ExternalLink className="h-3 w-3" />
+                <span>Mở Studio</span>
+              </Link>
+
+              {project.status === 'done' && project.export?.path && (
+                <a
+                  href={`/api/projects/${project._id}/export`}
+                  title="Tải video đã xuất"
+                  aria-label="Tải video đã xuất"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-emerald-500/30 bg-emerald-500/12 text-emerald-300 transition-colors hover:bg-emerald-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f97316]"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </a>
+              )}
+
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setShowDeleteModal(true);
-                }}
-                disabled={isDeleting}
+                onClick={handleDuplicate}
+                disabled={duplicating}
+                title="Nhân bản dự án"
+                aria-label={`Nhân bản ${project.name}`}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-[#18181b] text-[#a1a1aa] transition-colors hover:bg-[#27272a] hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f97316]"
+              >
+                {duplicating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(true)}
                 title="Xóa dự án"
-                className="p-1.5 text-[#71717a] hover:text-[#ef4444] hover:bg-[#3f3f46]/50 rounded transition-colors"
+                aria-label={`Xóa ${project.name}`}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-[#18181b] text-[#9ca3af] transition-colors hover:border-red-500/30 hover:bg-red-500/12 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f97316]"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
         </div>
-      </div>
+      </article>
 
-      {/* Confirmation Dialog */}
       <Dialog
-        open={showDeleteModal}
-        onOpenChange={setShowDeleteModal}
-        title="Xác nhận xóa dự án"
-        description="Thao tác này sẽ xóa vĩnh viễn video, âm thanh và phụ đề của dự án."
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Xóa dự án này?"
+        description="Hành động này sẽ xóa dự án cùng toàn bộ tệp video, giọng đọc và phụ đề đi kèm."
       >
-        <div className="flex flex-col gap-4 text-xs">
-          <p className="text-[#a1a1aa]">
-            Bạn có chắc chắn muốn xóa dự án{' '}
-            <strong className="text-white">"{project.name}"</strong> không?
-          </p>
-
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#3f3f46]/80">
-            <button
-              type="button"
-              onClick={() => setShowDeleteModal(false)}
-              disabled={isDeleting}
-              className="rounded-lg border border-[#3f3f46] px-4 py-2 text-xs font-semibold text-[#a1a1aa] hover:bg-[#27272a] hover:text-white transition-colors"
+        <div className="space-y-4">
+          <div className="rounded-lg border border-white/[0.08] bg-[#09090b] px-3 py-2.5 text-xs text-[#d4d4d8]">
+            Dự án: <span className="font-semibold text-white">{project.name}</span>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmOpen(false)}
+              disabled={deleting}
             >
-              Hủy
-            </button>
-            <button
-              type="button"
+              Giữ lại
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={handleConfirmDelete}
-              disabled={isDeleting}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#ef4444] px-4 py-2 text-xs font-bold text-white hover:bg-[#dc2626] transition-colors shadow-sm"
+              disabled={deleting}
             >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>Đang xóa...</span>
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Xóa vĩnh viễn</span>
-                </>
-              )}
-            </button>
+              {deleting ? 'Đang xóa...' : 'Xác nhận xóa'}
+            </Button>
           </div>
         </div>
       </Dialog>

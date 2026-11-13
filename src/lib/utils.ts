@@ -19,3 +19,34 @@ export function formatFileSize(bytes?: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
+
+export function resolveMediaUrl(filePath?: string | null): string {
+  if (!filePath) return '';
+  const norm = filePath.replace(/\\/g, '/').trim();
+  if (!norm) return '';
+  if (
+    norm.startsWith('http://') ||
+    norm.startsWith('https://') ||
+    norm.startsWith('/api/files/') ||
+    norm.startsWith('/music/')
+  ) {
+    return norm;
+  }
+  if (norm.includes('/public/')) {
+    return `/${norm.split('/public/')[1]}`;
+  }
+  if (norm.startsWith('public/')) {
+    return `/${norm.slice('public/'.length)}`;
+  }
+  if (norm.includes('/storage/')) {
+    return `/api/files/${norm.split('/storage/').pop()}`;
+  }
+  if (norm.startsWith('storage/')) {
+    return `/api/files/${norm.slice('storage/'.length)}`;
+  }
+  const catMatch = norm.match(/(?:^|\/)((?:uploads|audio|subtitles|music|exports)\/.+)$/);
+  if (catMatch) {
+    return `/api/files/${catMatch[1]}`;
+  }
+  return '';
+}

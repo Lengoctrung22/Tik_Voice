@@ -4,7 +4,8 @@ import path from 'path';
 import { connectDB } from '@/lib/db';
 import { Project } from '@/lib/db/models/Project';
 import { generateAssFile } from '@/lib/video/subtitle';
-import { getCategoryPath } from '@/lib/storage/local';
+import { getCategoryPath, safeUnlinkStorageFile } from '@/lib/storage/local';
+import { subtitleUpdateSchema } from '@/lib/validation/schemas';
 
 export async function GET(
   _request: NextRequest,
@@ -41,6 +42,25 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const rawBody = await request.json().catch(() => null);
+    if (!rawBody || typeof rawBody !== 'object') {
+      return NextResponse.json(
+        { success: false, error: 'Dữ liệu cấu hình phụ đề không hợp lệ.' },
+        { status: 400 }
+      );
+    }
+
+    const parsed = subtitleUpdateSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: parsed.error.issues[0]?.message || 'Thông số phụ đề không hợp lệ.',
+        },
+        { status: 400 }
+      );
+    }
+
     await connectDB();
 
     const project = await Project.findById(id);
@@ -48,7 +68,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Không tìm thấy dự án' }, { status: 404 });
     }
 
-    const body = await request.json();
+    const body = parsed.data;
     if (typeof body.enabled === 'boolean') {
       project.subtitle.enabled = body.enabled;
     }
@@ -64,7 +84,7 @@ export async function POST(
       project.subtitle.words = body.words;
     }
 
-    // Tái tạo file .ass vật lý
+    const oldSubPath = project.subtitle.path;
     const subDir = getCategoryPath('subtitles', id);
     const subFileName = `sub_${Date.now()}.ass`;
     const subFilePath = path.join(subDir, subFileName);
@@ -80,9 +100,14 @@ export async function POST(
 
     await project.save();
 
+    if (oldSubPath && oldSubPath !== subFilePath) {
+      await safeUnlinkStorageFile(oldSubPath);
+    }
+
     return NextResponse.json({
       success: true,
       data: {
+        project,
         subtitle: project.subtitle,
         assUrl: `/api/files/subtitles/${id}/${subFileName}`,
         assContent,

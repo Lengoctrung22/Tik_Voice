@@ -20,10 +20,10 @@ export const SCRIPT_TEMPLATES: Record<string, ScriptTemplate> = {
 Viết kịch bản lồng tiếng cho video TikTok review sản phẩm dài khoảng 30 giây.
 
 Cấu trúc bắt buộc:
-1. Hook (2-3 giây, 1-2 câu): Mở đầu gây tò mò, shock nhẹ hoặc đặt câu hỏi. Ví dụ: "Mình đã thử cái này suốt 1 tháng và kết quả khiến mình không tin nổi..."
+1. Hook (2-3 giây, 1-2 câu): Mở đầu gây tò mò, shock nhẹ hoặc đặt câu hỏi.
 2. Vấn đề (3-5 giây, 1-2 câu): Nêu vấn đề mà người xem đang gặp phải, tạo đồng cảm.
-3. Giải pháp + Ưu điểm (15-18 giây, 3-5 câu): Giới thiệu sản phẩm, highlight 2-3 ưu điểm nổi bật nhất. Dùng cụm từ mạnh: "game changer", "phải thử ngay", "hơn hẳn".
-4. CTA (3-5 giây, 1-2 câu): Kêu gọi hành động rõ ràng. Ví dụ: "Link sản phẩm ở bio nha!", "Comment 'muốn' để mình gửi link!"
+3. Giải pháp + Ưu điểm (15-18 giây, 3-5 câu): Giới thiệu sản phẩm, highlight 2-3 ưu điểm nổi bật nhất.
+4. CTA (3-5 giây, 1-2 câu): Kêu gọi hành động rõ ràng (giỏ hàng góc trái / bio).
 
 Sản phẩm: {productName}
 Thông tin sản phẩm: {productInfo}
@@ -34,7 +34,7 @@ Quy tắc viết:
 - Dùng ngôn ngữ đời thường, có thể xen tiếng lóng Gen Z phù hợp.
 - KHÔNG quá 120 từ (tương đương ~30 giây đọc).
 - KHÔNG dùng emoji trong kịch bản (để Text-to-Speech không đọc lỗi).
-- KHÔNG ghi chú đạo diễn (không viết "(cười)", "(nhấn mạnh)").
+- KHÔNG ghi chú đạo diễn (không viết "(cười)", "[Hook]").
 - Viết liền mạch, mỗi đoạn cách nhau bằng 1 dòng trống.
 Chỉ trả về kịch bản, không giải thích thêm.`,
   },
@@ -51,9 +51,9 @@ Viết kịch bản lồng tiếng cho video unboxing dài khoảng 45 giây.
 Cấu trúc:
 1. Teaser (3s): Tạo sự tò mò về sản phẩm sắp mở.
 2. Mở hộp (10s): Mô tả ấn tượng đầu tiên, packaging, phụ kiện kèm theo.
-3. First Impression (15s): Cảm nhận ban đầu khi cầm/dùng thử, so sánh với kỳ vọng.
+3. Trải nghiệm ban đầu (15s): Cảm nhận thực tế khi cầm/dùng thử.
 4. Đánh giá nhanh (10s): 2-3 điểm nổi bật nhất.
-5. CTA (5s): Kêu gọi follow để xem review chi tiết.
+5. CTA (5s): Kêu gọi xem link giỏ hàng góc trái.
 
 Sản phẩm: {productName}
 Thông tin: {productInfo}
@@ -73,17 +73,17 @@ Chỉ trả về kịch bản.`,
 Viết kịch bản so sánh dài ~45 giây.
 
 Cấu trúc:
-1. Hook (3s): Đặt câu hỏi so sánh gây tranh cãi.
-2. Giới thiệu 2 SP (5s): Tên, giá cả.
-3. So sánh từng tiêu chí (25s): 3-4 tiêu chí, mỗi tiêu chí nêu rõ winner.
-4. Verdict (7s): Kết luận nên mua cái nào.
-5. CTA (5s): Link mua ở bio/giỏ hàng.
+1. Hook (3s): Đặt câu hỏi so sánh gây tò mò.
+2. Giới thiệu 2 sản phẩm (5s): Tên, mức giá.
+3. So sánh từng tiêu chí (25s): 3-4 tiêu chí, nêu rõ điểm hơn thua.
+4. Kết luận (7s): Nên chọn cái nào cho ai.
+5. CTA (5s): Link mua ở giỏ hàng góc trái.
 
 Sản phẩm: {productName}
 Thông tin: {productInfo}
 Yêu cầu thêm: {customInstructions}
 
-Quy tắc: Công bằng nhưng có winner rõ ràng, không quá 180 từ, không emoji, không ghi chú đạo diễn.
+Quy tắc: Công bằng nhưng có lựa chọn rõ ràng, không quá 180 từ, không emoji, không ghi chú đạo diễn.
 Chỉ trả về kịch bản.`,
   },
 
@@ -97,16 +97,16 @@ Chỉ trả về kịch bản.`,
 Viết kịch bản "Top lý do nên mua" dài ~40 giây.
 
 Cấu trúc:
-1. Hook (3s): "X lý do bạn PHẢI mua [sản phẩm] ngay!"
-2. Lý do 1-3/5 (mỗi lý do 7-8s): Ngắn gọn, đánh trúng tâm lý.
-3. Bonus tip (5s): Mẹo sử dụng hoặc deal giảm giá đang có.
-4. CTA (5s): Kêu gọi chốt đơn.
+1. Hook (3s): Mở đầu bằng con số mạnh thu hút chú ý.
+2. Các lý do chính (25s): Ngắn gọn, đánh trúng tâm lý người mua.
+3. Mẹo / Deal (7s): Lưu ý sử dụng hoặc ưu đãi hiện tại.
+4. CTA (5s): Kêu gọi chốt đơn ngay.
 
 Sản phẩm: {productName}
 Thông tin: {productInfo}
 Yêu cầu thêm: {customInstructions}
 
-Quy tắc: Năng lượng cao, đếm ngược dứt khoát, không quá 160 từ, không emoji, không ghi chú đạo diễn.
+Quy tắc: Năng lượng cao, dứt khoát, không quá 160 từ, không emoji, không ghi chú đạo diễn.
 Chỉ trả về kịch bản.`,
   },
 
@@ -120,12 +120,12 @@ Chỉ trả về kịch bản.`,
 Viết kịch bản kể chuyện dài ~45 giây.
 
 Cấu trúc:
-1. Mở đầu (5s): Bối cảnh — "Mình từng gặp vấn đề X..."
-2. Khó khăn (8s): Mô tả nỗi đau cụ thể khiến bạn khó chịu.
-3. Phát hiện SP (5s): "Cho đến khi mình tìm thấy em này..."
-4. Trải nghiệm (15s): Kể chi tiết quá trình dùng, thay đổi thế nào.
+1. Mở đầu (5s): Bối cảnh gặp vấn đề.
+2. Khó khăn (8s): Mô tả nỗi đau cụ thể.
+3. Phát hiện sản phẩm (5s): Bước ngoặt tìm thấy sản phẩm.
+4. Trải nghiệm (15s): Kể chi tiết quá trình dùng, thay đổi thực tế.
 5. Kết (7s): Cảm nhận tổng thể và lời khuyên chân thành.
-6. CTA (5s): Giục người xem xem link ở góc trái.
+6. CTA (5s): Gợi ý xem giỏ hàng góc trái.
 
 Sản phẩm: {productName}
 Thông tin: {productInfo}
@@ -138,10 +138,8 @@ Chỉ trả về kịch bản.`,
 
 export function cleanScriptText(text: string): string {
   return text
-    // Bỏ các chú thích đạo diễn dạng [Hook], (Cười), [Nhạc nền], (nhấn mạnh)
     .replace(/\[[^\]]*\]/g, '')
     .replace(/\([^)]*\)/g, '')
-    // Bỏ emoji Unicode phổ biến để Edge TTS không đọc lỗi
     .replace(
       /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu,
       ''
@@ -152,39 +150,128 @@ export function cleanScriptText(text: string): string {
     .join('\n\n');
 }
 
-export async function generateProductScript(params: {
-  productName: string;
-  productInfo: string;
-  templateId: string;
-  customInstructions?: string;
-}): Promise<string> {
-  const template =
-    SCRIPT_TEMPLATES[params.templateId as keyof typeof SCRIPT_TEMPLATES] ||
-    SCRIPT_TEMPLATES.quick_review;
-
-  const prompt = template.promptTemplate
-    .replace('{productName}', params.productName)
-    .replace('{productInfo}', params.productInfo || 'Không có')
-    .replace('{customInstructions}', params.customInstructions || 'Không có');
-
+async function callGeminiWithFallback(
+  contents: string | Array<string | { inlineData: { data: string; mimeType: string } }>
+): Promise<string> {
   const ai = getGeminiClient();
   const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
   try {
     const response = await ai.models.generateContent({
       model: primaryModel,
-      contents: prompt,
+      contents,
     });
-    return cleanScriptText(response.text?.trim() || '');
+    return response.text?.trim() || '';
   } catch (error) {
-    console.warn(
-      `[Gemini] Model ${primaryModel} gặp lỗi, tự động thử lại với gemini-2.0-flash:`,
-      error
-    );
+    console.warn(`[Gemini] Model ${primaryModel} gặp lỗi, thử lại với gemini-2.0-flash:`, error);
     const fallbackResponse = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents,
     });
-    return cleanScriptText(fallbackResponse.text?.trim() || '');
+    return fallbackResponse.text?.trim() || '';
   }
+}
+
+export async function generateProductScript(params: {
+  productName: string;
+  productInfo: string;
+  templateId: string;
+  customInstructions?: string;
+  productImageBase64?: string;
+  productImageMimeType?: string;
+}): Promise<string> {
+  const template =
+    SCRIPT_TEMPLATES[params.templateId as keyof typeof SCRIPT_TEMPLATES] ||
+    SCRIPT_TEMPLATES.quick_review;
+
+  let prompt = template.promptTemplate
+    .replace('{productName}', params.productName)
+    .replace('{productInfo}', params.productInfo || 'Không có')
+    .replace('{customInstructions}', params.customInstructions || 'Không có');
+
+  if (params.productImageBase64) {
+    prompt += `\n\nHãy quan sát thêm ảnh sản phẩm đính kèm (màu sắc, bao bì, dung tích, chữ trên nhãn nếu thấy rõ) để mô tả chi tiết thực tế hơn.`;
+    const raw = await callGeminiWithFallback([
+      prompt,
+      {
+        inlineData: {
+          data: params.productImageBase64,
+          mimeType: params.productImageMimeType || 'image/jpeg',
+        },
+      },
+    ]);
+    return cleanScriptText(raw);
+  }
+
+  const raw = await callGeminiWithFallback(prompt);
+  return cleanScriptText(raw);
+}
+
+/**
+ * Tạo 3 phương án Hook 3 giây đầu để Creator A/B test.
+ */
+export async function generateHookVariants(params: {
+  productName: string;
+  productInfo?: string;
+  currentScript?: string;
+}): Promise<string[]> {
+  const prompt = `Bạn là chuyên gia nội dung TikTok Affiliate. Hãy viết đúng 3 câu mở đầu (Hook 3 giây đầu) khác nhau cho sản phẩm "${params.productName}".
+Thông tin sản phẩm: ${params.productInfo || 'Không có'}
+Ngữ cảnh kịch bản hiện tại: ${params.currentScript || 'Chưa có'}
+
+Yêu cầu:
+- Câu 1: Gây tò mò / sốc nhẹ (Curiosity)
+- Câu 2: Đánh trúng nỗi đau (Pain point)
+- Câu 3: Khoe kết quả / Deal hời (Result/Offer)
+- Mỗi câu ngắn gọn dưới 18 từ, tiếng Việt tự nhiên, KHÔNG emoji, KHÔNG số thứ tự, mỗi câu trên 1 dòng.`;
+
+  const raw = await callGeminiWithFallback(prompt);
+  return raw
+    .split('\n')
+    .map((line) => line.replace(/^[-*•\d.)\s]+/, '').trim())
+    .map((line) => cleanScriptText(line))
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+/**
+ * Tạo Caption và Hashtag TikTok chuẩn SEO từ kịch bản & tên sản phẩm.
+ */
+export async function generateTikTokCaption(params: {
+  productName?: string;
+  scriptText?: string;
+}): Promise<{ caption: string; hashtags: string[] }> {
+  const prompt = `Bạn là chuyên gia TikTok Affiliate Việt Nam. Dựa vào sản phẩm và kịch bản sau, hãy tạo:
+1. Một đoạn caption ngắn hấp dẫn (2-3 dòng, có CTA xem giỏ hàng góc trái)
+2. Danh sách 5-7 hashtag tiếng Việt/tiếng Anh phù hợp xu hướng TikTok Shop.
+
+Sản phẩm: ${params.productName || 'Sản phẩm hot TikTok'}
+Kịch bản: ${params.scriptText || 'Review chân thực sản phẩm'}
+
+Trả về đúng định dạng JSON thuần (không bọc markdown):
+{"caption": "...", "hashtags": ["#review", "#tiktokshop"]}`;
+
+  const raw = await callGeminiWithFallback(prompt);
+  const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+  try {
+    const parsed = JSON.parse(cleaned) as { caption?: string; hashtags?: string[] };
+    const caption = (parsed.caption || '').trim();
+    const hashtags = Array.isArray(parsed.hashtags)
+      ? parsed.hashtags
+          .map((h) => String(h).trim())
+          .filter(Boolean)
+          .map((h) => (h.startsWith('#') ? h : `#${h}`))
+          .slice(0, 10)
+      : [];
+    if (caption) {
+      return { caption, hashtags };
+    }
+  } catch {
+    // Fallback if Gemini didn't return strict JSON
+  }
+
+  return {
+    caption: `${params.productName ? `${params.productName} - ` : ''}Dùng thử và cảm nhận thực tế, xem ngay ở giỏ hàng góc trái nhé!`,
+    hashtags: ['#tiktokshop', '#reviewchantinh', '#xuhuong', '#affiliate'],
+  };
 }

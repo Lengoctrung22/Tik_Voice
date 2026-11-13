@@ -1,137 +1,183 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Layers, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { BatchUploader } from '@/components/batch/BatchUploader';
 import { BatchProgress } from '@/components/batch/BatchProgress';
-import { IPopulatedBatchGroup } from '@/types';
-import { Layers, Plus, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { useBatchStore } from '@/stores/batchStore';
+import type { IPopulatedBatchGroup } from '@/types';
 
-export default function BatchPage() {
-  const [batches, setBatches] = useState<IPopulatedBatchGroup[]>([]);
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
-  const [isCreatingNew, setIsCreatingNew] = useState(false);
+function BatchStudioContent() {
+  const searchParams = useSearchParams();
+  const isNewQuery = searchParams.get('new') === '1';
 
-  const fetchBatches = async () => {
+  const { batches, activeBatch, setBatches, setActiveBatch } = useBatchStore();
+  const [mode, setMode] = useState<'create' | 'view'>(isNewQuery ? 'create' : 'view');
+  const [loadingList, setLoadingList] = useState(true);
+
+  const loadBatches = useCallback(async () => {
     try {
       const res = await fetch('/api/batch');
-      const data = await res.json();
-      if (data.success && data.data) {
-        setBatches(data.data);
-        if (data.data.length > 0 && !selectedBatchId) {
-          setSelectedBatchId(data.data[0]._id);
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: IPopulatedBatchGroup[];
+      };
+      if (json.success && Array.isArray(json.data)) {
+        setBatches(json.data);
+        if (!isNewQuery && json.data.length > 0 && !useBatchStore.getState().activeBatch) {
+          setActiveBatch(json.data[0]);
+          setMode('view');
+        } else if (json.data.length === 0) {
+          setMode('create');
         }
       }
     } catch {
-      // ignore
+      toast.error('Không thể tải danh sách lô xử lý');
+    } finally {
+      setLoadingList(false);
+    }
+  }, [isNewQuery, setActiveBatch, setBatches]);
+
+  useEffect(() => {
+    loadBatches();
+  }, [loadBatches]);
+
+  useEffect(() => {
+    if (isNewQuery) {
+      setMode('create');
+    }
+  }, [isNewQuery]);
+
+  const handleBatchCreated = (created: IPopulatedBatchGroup) => {
+    setBatches([created, ...batches]);
+    setActiveBatch(created);
+    setMode('view');
+  };
+
+  const handleBatchUpdated = useCallback(
+    (updated: IPopulatedBatchGroup) => {
+      setActiveBatch(updated);
+      setBatches(batches.map((b) => (b._id === updated._id ? updated : b)));
+    },
+    [batches, setActiveBatch, setBatches]
+  );
+
+  const handleBatchDeleted = (deletedId: string) => {
+    const remaining = batches.filter((b) => b._id !== deletedId);
+    setBatches(remaining);
+    if (remaining.length > 0) {
+      setActiveBatch(remaining[0]);
+      setMode('view');
+    } else {
+      setActiveBatch(null);
+      setMode('create');
     }
   };
 
-  useEffect(() => {
-    fetchBatches();
-  }, []);
-
-  const handleBatchCreated = (newBatchId: string) => {
-    setSelectedBatchId(newBatchId);
-    setIsCreatingNew(false);
-    fetchBatches();
-  };
-
   return (
-    <div className="min-h-screen bg-[#09090b] flex flex-col text-white">
-      <Header />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-              <Layers className="h-6 w-6 text-[#f97316]" />
-              <span>Không Gian Xử Lý Lô Video (Batch Studio)</span>
-            </h1>
-            <p className="text-xs text-[#a1a1aa] mt-1">
-              Tạo hàng loạt video TikTok Affiliate với 1 giọng đọc và style phụ đề duy nhất
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsCreatingNew(!isCreatingNew)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-[#f97316] px-4 py-2 text-xs font-bold text-black hover:bg-[#ea580c] transition-all shadow-md self-start sm:self-auto"
+    <main className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 py-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[270px_minmax(0,1fr)] gap-6 items-start">
+        {/* Left Sidebar: Batches History */}
+        <aside className="rounded-xl border border-white/[0.08] bg-[#111113] p-3 space-y-3">
+          <Button
+            onClick={() => setMode('create')}
+            className="w-full gap-1.5"
           >
-            <Plus className="h-4 w-4 stroke-[3]" />
-            <span>{isCreatingNew ? 'Xem danh sách lô' : 'Tạo lô video mới'}</span>
-          </button>
-        </div>
+            <Plus className="h-4 w-4" />
+            <span>Tạo lô mới</span>
+          </Button>
 
-        {isCreatingNew ? (
-          <BatchUploader onBatchCreated={handleBatchCreated} />
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Left list of batches */}
-            <div className="flex flex-col gap-3 lg:col-span-1">
-              <span className="text-xs font-semibold text-[#a1a1aa]">Các lô đã tạo</span>
-
-              {batches.length === 0 ? (
-                <div className="rounded-xl border border-[#3f3f46] bg-[#18181b] p-6 text-center text-xs text-[#71717a]">
-                  Chưa có lô video nào. Nhấn "Tạo lô video mới" để bắt đầu.
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {batches.map((b) => {
-                    const isSelected = selectedBatchId === b._id;
-                    const doneCount =
-                      b.items?.filter(
-                        (i) => i.status === 'done' || (typeof i.projectId === 'object' && i.projectId !== null && (i.projectId as any).status === 'done')
-                      ).length || 0;
-                    const totalCount = b.items?.length || 0;
-
-                    return (
-                      <button
-                        key={b._id}
-                        type="button"
-                        onClick={() => setSelectedBatchId(b._id)}
-                        className={`rounded-xl border p-3 text-left transition-all ${
-                          isSelected
-                            ? 'border-[#f97316] bg-[#431407]/40 shadow-sm'
-                            : 'border-[#3f3f46] bg-[#18181b] hover:bg-[#27272a]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="font-semibold text-xs text-white truncate max-w-[160px]">
-                            {b.name || 'Lô video'}
-                          </p>
-                          <span className="text-[10px] text-[#71717a]">
-                            {doneCount}/{totalCount}
-                          </span>
-                        </div>
-                        <div className="w-full bg-[#27272a] h-1 rounded-full overflow-hidden mt-2">
-                          <div
-                            className="bg-[#22c55e] h-full"
-                            style={{
-                              width: `${totalCount > 0 ? (doneCount / totalCount) * 100 : 0}%`,
-                            }}
-                          />
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+          <div className="space-y-1.5">
+            <div className="px-1 text-[11px] font-semibold uppercase tracking-wider text-[#9ca3af]">
+              Lịch sử lô ({batches.length})
             </div>
 
-            {/* Right Active Batch Progress */}
-            <div className="lg:col-span-3">
-              {selectedBatchId ? (
-                <BatchProgress batchId={selectedBatchId} />
-              ) : (
-                <div className="rounded-2xl border border-[#3f3f46] bg-[#18181b] p-12 text-center text-xs text-[#a1a1aa]">
-                  Chọn một lô video ở danh sách bên trái hoặc tạo lô mới để theo dõi tiến độ
-                </div>
-              )}
-            </div>
+            {loadingList ? (
+              <div className="space-y-2 py-2">
+                <div className="h-14 animate-pulse rounded-lg bg-[#18181b]" />
+                <div className="h-14 animate-pulse rounded-lg bg-[#18181b]" />
+              </div>
+            ) : batches.length === 0 ? (
+              <p className="px-2 py-4 text-center text-xs text-[#9ca3af]">
+                Chưa có lô xử lý nào
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-[65vh] overflow-y-auto pr-0.5">
+                {batches.map((b) => {
+                  const selected = mode === 'view' && activeBatch?._id === b._id;
+                  const doneCount = b.items.filter((i) => i.status === 'done').length;
+                  return (
+                    <button
+                      key={b._id}
+                      type="button"
+                      onClick={() => {
+                        setActiveBatch(b);
+                        setMode('view');
+                      }}
+                      className={`w-full rounded-lg border p-2.5 text-left transition-colors cursor-pointer ${
+                        selected
+                          ? 'border-[#f97316]/60 bg-[#f97316]/10'
+                          : 'border-white/[0.06] bg-[#18181b] hover:border-white/[0.15]'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="truncate text-xs font-semibold text-[#fafafa]">
+                          {b.name}
+                        </span>
+                        <StatusBadge status={b.status} />
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between text-[10px] text-[#9ca3af] tabular-nums">
+                        <span className="inline-flex items-center gap-1">
+                          <Layers className="h-3 w-3" />
+                          {doneCount}/{b.items.length} video
+                        </span>
+                        <span>
+                          {new Date(b.createdAt).toLocaleDateString('vi-VN')}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </main>
+        </aside>
+
+        {/* Main Workspace */}
+        <section className="min-w-0">
+          {mode === 'view' && activeBatch ? (
+            <BatchProgress
+              batch={activeBatch}
+              onBatchUpdated={handleBatchUpdated}
+              onBatchDeleted={handleBatchDeleted}
+            />
+          ) : (
+            <BatchUploader onBatchCreated={handleBatchCreated} />
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+export default function BatchPage() {
+  return (
+    <div className="min-h-screen bg-[#09090b] text-[#fafafa] flex flex-col">
+      <Header />
+      <Suspense
+        fallback={
+          <main className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 py-8">
+            <div className="h-64 animate-pulse rounded-xl bg-[#111113]" />
+          </main>
+        }
+      >
+        <BatchStudioContent />
+      </Suspense>
     </div>
   );
 }

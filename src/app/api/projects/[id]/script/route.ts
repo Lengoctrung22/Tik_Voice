@@ -49,37 +49,59 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Không tìm thấy dự án' }, { status: 404 });
     }
 
-    const body = await request.json();
-    const { productName, productInfo, templateId, customInstructions, text } = body;
+    const body = (await request.json().catch(() => ({}))) as {
+      productName?: string;
+      productInfo?: string;
+      templateId?: string;
+      customInstructions?: string;
+      text?: string;
+      generateWithAI?: boolean;
+      productImageBase64?: string;
+      productImageMimeType?: string;
+    };
 
-    let finalScriptText = text || '';
+    const {
+      productName,
+      productInfo,
+      templateId,
+      customInstructions,
+      text,
+      generateWithAI,
+      productImageBase64,
+      productImageMimeType,
+    } = body;
 
-    const isManualSave = typeof text === 'string' && text.trim().length > 0 && !body.generateWithAI;
+    let finalScriptText = typeof text === 'string' ? text : '';
+    const isManualSave = !generateWithAI && typeof text === 'string';
 
-    if (!isManualSave && (body.generateWithAI || !finalScriptText)) {
-      if (!productName) {
+    if (!isManualSave && (generateWithAI || !finalScriptText.trim())) {
+      if (!productName?.trim()) {
         return NextResponse.json(
-          { success: false, error: 'Vui lòng nhập tên sản phẩm để AI viết kịch bản' },
+          { success: false, error: 'Vui lòng nhập tên sản phẩm để AI viết kịch bản.' },
           { status: 400 }
         );
       }
 
       finalScriptText = await generateProductScript({
-        productName,
-        productInfo,
+        productName: productName.trim(),
+        productInfo: productInfo || '',
         templateId: templateId || 'quick_review',
         customInstructions,
+        productImageBase64,
+        productImageMimeType,
       });
     }
 
     project.script = {
+      ...project.script,
       text: finalScriptText,
       templateId,
       productName,
       productInfo,
+      customInstructions,
     };
 
-    if (project.status === 'draft' && finalScriptText) {
+    if (project.status === 'draft' && finalScriptText.trim()) {
       project.status = 'scripted';
     }
 

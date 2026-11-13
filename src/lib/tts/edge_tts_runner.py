@@ -53,30 +53,53 @@ async def main():
 
     import edge_tts
 
-    communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
-
     words = []
     sentence_chunks = []
     word_chunks = []
 
-    with open(output_path, "wb") as f:
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                f.write(chunk["data"])
-            elif chunk["type"] == "WordBoundary":
-                word_chunks.append(chunk)
-            elif chunk["type"] == "SentenceBoundary":
-                sentence_chunks.append(chunk)
+    last_err = None
+    for attempt in range(2):
+        words = []
+        sentence_chunks = []
+        word_chunks = []
+        try:
+            communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+            with open(output_path, "wb") as f:
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        f.write(chunk["data"])
+                    elif chunk["type"] == "WordBoundary":
+                        word_chunks.append(chunk)
+                    elif chunk["type"] == "SentenceBoundary":
+                        sentence_chunks.append(chunk)
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                last_err = None
+                break
+        except Exception as exc:
+            last_err = exc
+            if attempt == 0:
+                await asyncio.sleep(0.5)
+                continue
+            raise
+
+    if last_err is not None:
+        raise last_err
 
     if word_chunks:
+        prev_end = 0
         for chunk in word_chunks:
-            start_ms = int(chunk["offset"] / 10000)
-            end_ms = int((chunk["offset"] + chunk["duration"]) / 10000)
+            start_ms = max(prev_end, int(chunk["offset"] / 10000))
+            end_ms = max(start_ms + 20, int((chunk["offset"] + chunk["duration"]) / 10000))
             words.append({"word": chunk["text"], "start": start_ms, "end": end_ms})
+            prev_end = end_ms
     elif sentence_chunks:
+        prev_end = 0
         for s in sentence_chunks:
-            s_start = int(s["offset"] / 10000)
+            raw_start = int(s["offset"] / 10000)
             s_dur = int(s["duration"] / 10000)
+            s_start = max(prev_end, raw_start)
+            s_end = max(s_start + 40, raw_start + s_dur)
+            effective_dur = s_end - s_start
             s_text = s["text"].strip()
             raw_words = s_text.split()
             if not raw_words:
@@ -84,9 +107,12 @@ async def main():
             total_chars = sum(len(w) for w in raw_words)
             curr = s_start
             for idx, w in enumerate(raw_words):
-                w_dur = (len(w) / total_chars) * s_dur
-                w_end = s_start + s_dur if idx == len(raw_words) - 1 else curr + w_dur
-                words.append({"word": w, "start": int(curr), "end": int(w_end)})
+                w_dur = (len(w) / total_chars) * effective_dur
+                w_end = s_end if idx == len(raw_words) - 1 else curr + w_dur
+                w_start_int = max(prev_end, int(curr))
+                w_end_int = max(w_start_int + 10, int(w_end))
+                words.append({"word": w, "start": w_start_int, "end": w_end_int})
+                prev_end = w_end_int
                 curr = w_end
     elif text and os.path.exists(output_path):
         try:

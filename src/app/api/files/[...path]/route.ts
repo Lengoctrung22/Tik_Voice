@@ -12,11 +12,9 @@ export async function GET(
   const storageRoot = path.resolve(process.env.STORAGE_PATH || './storage');
   const fullPath = path.resolve(storageRoot, relativePath);
 
-  const expectedRoot = path.resolve(process.env.STORAGE_PATH || './storage');
-
   // Ngăn chặn Path Traversal
-  const rel = path.relative(expectedRoot, fullPath);
-  if (!fullPath.startsWith(expectedRoot) || rel.startsWith('..') || path.isAbsolute(rel)) {
+  const rel = path.relative(storageRoot, fullPath);
+  if (!fullPath.startsWith(storageRoot) || rel.startsWith('..') || path.isAbsolute(rel)) {
     return new NextResponse('Forbidden', { status: 403 });
   }
 
@@ -39,7 +37,6 @@ export async function GET(
     let start = parts[0] ? parseInt(parts[0], 10) : NaN;
     let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
 
-    // Support suffix range e.g. bytes=-500 (last 500 bytes)
     if (isNaN(start) && parts[1]) {
       const suffixLength = parseInt(parts[1], 10);
       if (!isNaN(suffixLength)) {
@@ -85,6 +82,7 @@ export async function GET(
         'Content-Length': fileSize.toString(),
         'Content-Type': contentType,
         'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=3600',
       },
     });
   }
@@ -94,6 +92,7 @@ function getContentType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   switch (ext) {
     case '.mp4':
+    case '.m4v':
       return 'video/mp4';
     case '.mov':
       return 'video/quicktime';
@@ -103,6 +102,18 @@ function getContentType(filePath: string): string {
       return 'audio/mpeg';
     case '.wav':
       return 'audio/wav';
+    case '.m4a':
+    case '.aac':
+      return 'audio/mp4';
+    case '.ogg':
+      return 'audio/ogg';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.png':
+      return 'image/png';
+    case '.webp':
+      return 'image/webp';
     case '.ass':
       return 'text/plain; charset=utf-8';
     default:

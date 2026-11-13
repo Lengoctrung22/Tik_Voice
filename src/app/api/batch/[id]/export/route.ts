@@ -17,9 +17,13 @@ export async function GET(
     const batch = await BatchGroup.findById(id);
     if (!batch) return new NextResponse('Batch not found', { status: 404 });
 
-    const projectIds = batch.items.map((i: any) =>
-      typeof i.projectId === 'object' && i.projectId !== null ? i.projectId._id : i.projectId
-    );
+    interface PopulatedBatchItem {
+      projectId?: string | { _id?: string } | null;
+    }
+
+    const projectIds = (batch.items as PopulatedBatchItem[])
+      .map((i) => (typeof i.projectId === 'object' && i.projectId !== null ? i.projectId._id : i.projectId))
+      .filter((pid): pid is string => Boolean(pid));
     const projects = await Project.find({ _id: { $in: projectIds }, status: 'done' });
 
     const validFiles = projects.filter(

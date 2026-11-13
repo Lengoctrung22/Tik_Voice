@@ -4,6 +4,8 @@ import { connectDB } from '@/lib/db';
 import { Project } from '@/lib/db/models/Project';
 import { Job } from '@/lib/db/models/Job';
 import { getVideoQueue } from '@/lib/queue/queues';
+import { ensureRedisAvailable } from '@/lib/queue/connection';
+import { renderRequestSchema } from '@/lib/validation/schemas';
 
 export async function POST(
   request: NextRequest,
@@ -11,6 +13,18 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const rawBody = await request.json().catch(() => ({}));
+    const parsed = renderRequestSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: parsed.error.issues[0]?.message || 'Tham số render không hợp lệ.',
+        },
+        { status: 400 }
+      );
+    }
+
     await connectDB();
 
     const project = await Project.findById(id);
@@ -27,13 +41,45 @@ export async function POST(
 
     if (!project.tts?.audioPath) {
       return NextResponse.json(
-        { success: false, error: 'Dự án chưa có audio giọng đọc. Vui lòng tạo giọng đọc trước.' },
+        { success: false, error: 'Dự án chưa có giọng đọc. Hãy tạo giọng đọc trước khi xuất.' },
         { status: 400 }
       );
     }
 
-    const body = await request.json().catch(() => ({}));
-    const quality = body.quality || project.export?.quality || 'balanced';
+    // Chặn tạo job trùng nếu dự án đang render
+    const existingActiveJob = await Job.findOne({
+      projectId: id,
+      type: { $in: ['render', 'full_pipeline'] },
+      status: { $in: ['queued', 'processing'] },
+    });
+
+    if (project.status === 'rendering' && existingActiveJob) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Video này đang được render. Vui lòng đợi hoàn tất hoặc hủy tiến trình hiện tại.',
+          data: { jobId: existingActiveJob._id },
+        },
+        { status: 409 }
+      );
+    }
+
+    const { quality, resolution } = parsed.data;
+
+    try {
+      await ensureRedisAvailable(1500);
+    } catch (redisErr: unknown) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            redisErr instanceof Error
+              ? redisErr.message
+              : 'Hàng đợi xử lý nền (Redis) chưa sẵn sàng.',
+        },
+        { status: 503 }
+      );
+    }
 
     const jobId = nanoid(12);
 
@@ -43,25 +89,44 @@ export async function POST(
       type: 'render',
       status: 'queued',
       progress: 0,
+      payload: { quality, resolution },
     });
 
-    const queue = getVideoQueue();
-    const bullJob = await queue.add(
-      'render-video',
-      {
-        jobId,
-        projectId: id,
-        quality,
-      },
-      {
-        jobId,
-      }
-    );
+    try {
+      const queue = getVideoQueue();
+      const bullJob = await queue.add(
+        'render-video',
+        {
+          jobId,
+          projectId: id,
+          type: 'render',
+          quality,
+          resolution,
+        },
+        {
+          jobId,
+        }
+      );
 
-    dbJob.bullmqJobId = bullJob.id;
-    await dbJob.save();
+      dbJob.bullmqJobId = bullJob.id;
+      await dbJob.save();
+    } catch (queueErr: unknown) {
+      await Job.findByIdAndDelete(jobId).catch(() => {});
+      const message =
+        queueErr instanceof Error
+          ? `Không thể đưa vào hàng đợi xử lý: ${queueErr.message}`
+          : 'Không thể kết nối hàng đợi xử lý nền (Redis)';
+      return NextResponse.json({ success: false, error: message }, { status: 503 });
+    }
 
     project.status = 'rendering';
+    project.export = {
+      path: project.export?.path || '',
+      resolution,
+      quality,
+      fileSize: project.export?.fileSize,
+      thumbnailPath: project.export?.thumbnailPath,
+    };
     await project.save();
 
     return NextResponse.json({
@@ -69,6 +134,8 @@ export async function POST(
       data: {
         jobId,
         status: 'queued',
+        resolution,
+        quality,
         project,
       },
     });

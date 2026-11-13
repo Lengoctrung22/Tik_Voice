@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import { IBatchGroup, ISubtitleStyle } from '@/types';
+import type {
+  ExportResolution,
+  IPopulatedBatchGroup,
+  ISubtitleStyle,
+  VideoAspectMode,
+} from '@/types';
+import { DEFAULT_SUBTITLE_STYLE } from '@/lib/video/subtitle-presets';
 
 export interface BatchUploadItem {
   id: string;
@@ -19,6 +25,10 @@ export interface BatchSharedConfig {
   speed: number;
   pitch: number;
   templateId: string;
+  aspectMode: VideoAspectMode;
+  resolution: ExportResolution;
+  quality: 'fast' | 'balanced' | 'high';
+  subtitleEnabled: boolean;
   subtitleStyle: Partial<ISubtitleStyle>;
   bgMusic?: {
     path: string;
@@ -26,6 +36,7 @@ export interface BatchSharedConfig {
     volume: number;
     fadeIn?: number;
     fadeOut?: number;
+    ducking?: boolean;
   };
 }
 
@@ -35,34 +46,33 @@ const defaultSharedConfig: BatchSharedConfig = {
   speed: 1.0,
   pitch: 0,
   templateId: 'quick_review',
-  subtitleStyle: {
-    fontFamily: 'Be Vietnam Pro',
-    fontSize: 64,
-    fontWeight: 'bold',
-    primaryColor: '#FFFFFF',
-    highlightColor: '#FFD700',
-    outlineColor: '#000000',
-    outlineWidth: 4,
-    position: 'bottom',
-    marginBottom: 120,
-    wordsPerGroup: 3,
-    highlightEnabled: true,
-  },
+  aspectMode: 'contain',
+  resolution: '1080x1920',
+  quality: 'balanced',
+  subtitleEnabled: true,
+  subtitleStyle: { ...DEFAULT_SUBTITLE_STYLE },
   bgMusic: {
     path: 'public/music/lofi-chill.mp3',
-    name: 'Lo-Fi Chill Preset',
+    name: 'Lo-Fi Chill Nhẹ Nhàng',
     volume: 0.12,
     fadeIn: 2,
     fadeOut: 3,
+    ducking: true,
   },
 };
+
+export interface CsvBatchRow {
+  productName: string;
+  productInfo: string;
+  scriptText: string;
+}
 
 interface BatchState {
   items: BatchUploadItem[];
   sharedConfig: BatchSharedConfig;
   batchName: string;
-  batches: IBatchGroup[];
-  activeBatch: IBatchGroup | null;
+  batches: IPopulatedBatchGroup[];
+  activeBatch: IPopulatedBatchGroup | null;
   loading: boolean;
   isSubmitting: boolean;
 
@@ -70,12 +80,13 @@ interface BatchState {
   addFiles: (files: File[]) => void;
   removeItem: (id: string) => void;
   updateItem: (id: string, updates: Partial<BatchUploadItem>) => void;
+  applyCsvRows: (rows: CsvBatchRow[]) => number;
   clearItems: () => void;
   setBatchName: (name: string) => void;
   setSharedConfig: (config: BatchSharedConfig) => void;
   updateSharedConfig: (updates: Partial<BatchSharedConfig>) => void;
-  setBatches: (batches: IBatchGroup[]) => void;
-  setActiveBatch: (batch: IBatchGroup | null) => void;
+  setBatches: (batches: IPopulatedBatchGroup[]) => void;
+  setActiveBatch: (batch: IPopulatedBatchGroup | null) => void;
   setLoading: (loading: boolean) => void;
   setIsSubmitting: (isSubmitting: boolean) => void;
   resetBatchForm: () => void;
@@ -119,10 +130,27 @@ export const useBatchStore = create<BatchState>((set) => ({
       ),
     })),
 
+  applyCsvRows: (rows) => {
+    let appliedCount = 0;
+    set((state) => {
+      const updated = state.items.map((item, idx) => {
+        const row = rows[idx];
+        if (!row) return item;
+        appliedCount++;
+        return {
+          ...item,
+          productName: row.productName || item.productName,
+          productInfo: row.productInfo ?? item.productInfo,
+          scriptText: row.scriptText ?? item.scriptText,
+        };
+      });
+      return { items: updated };
+    });
+    return appliedCount;
+  },
+
   clearItems: () => set({ items: [] }),
-
   setBatchName: (batchName) => set({ batchName }),
-
   setSharedConfig: (sharedConfig) => set({ sharedConfig }),
 
   updateSharedConfig: (updates) =>

@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir edge-tts
 WORKDIR /app
 
 # 3. Copy và cài đặt font chữ hệ thống
-COPY public/fonts/BeVietnamPro-Bold.ttf /usr/share/fonts/truetype/
+COPY public/fonts/*.ttf /usr/share/fonts/truetype/
 RUN fc-cache -f -v
 
 # 4. Cài đặt npm dependencies (bao gồm tsx trong dependencies)

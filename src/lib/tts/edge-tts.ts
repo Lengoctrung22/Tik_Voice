@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { TTSOptions, TTSResult, Voice } from '@/types';
+import { probeAudioDuration } from '@/lib/video/probe';
 import type { TTSEngine } from './engine';
 import { SUPPORTED_VOICES } from './voices';
 
@@ -41,7 +42,7 @@ export async function synthesizeWithEdgeTTS(
       stderrData += chunk.toString('utf-8');
     });
 
-    proc.on('close', (code: number) => {
+    proc.on('close', async (code: number) => {
       if (code !== 0) {
         return reject(
           new Error(`Edge TTS failed with code ${code}: ${stderrData || stdoutData}`)
@@ -53,9 +54,13 @@ export async function synthesizeWithEdgeTTS(
         if (!parsed.success) {
           return reject(new Error(parsed.error || 'Edge TTS returned failure'));
         }
+        const accurateDuration = await probeAudioDuration(
+          parsed.audioPath,
+          parsed.audioDuration || 1
+        );
         resolve({
           audioPath: parsed.audioPath,
-          audioDuration: parsed.audioDuration,
+          audioDuration: accurateDuration,
           words: parsed.words || [],
         });
       } catch (err) {

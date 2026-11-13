@@ -1,58 +1,191 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useEditorStore } from '@/stores/editorStore';
+import React, { useEffect, useState } from 'react';
 import {
-  Rocket,
-  Download,
   CheckCircle2,
-  AlertCircle,
+  CircleAlert,
+  Download,
   Loader2,
-  Tv,
+  Play,
   Sparkles,
-  FileVideo,
+  Copy,
+  Check,
+  XCircle,
+  Film,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useEditorStore } from '@/stores/editorStore';
+import { Button } from '@/components/ui/button';
 import { formatFileSize } from '@/lib/utils';
+import type { ExportResolution, ProjectDTO } from '@/types';
 
-export function ExportPanel() {
+interface ExportPanelProps {
+  onFlushSave: () => Promise<boolean>;
+}
+
+interface JobPollResponse {
+  success: boolean;
+  data?: {
+    _id: string;
+    status: 'queued' | 'processing' | 'done' | 'error' | 'cancelled';
+    progress: number;
+    error?: string;
+  };
+}
+
+export function ExportPanel({ onFlushSave }: ExportPanelProps) {
   const {
     project,
-    updateProjectPartial,
-    isRendering,
-    setIsRendering,
     renderProgress,
-    setRenderProgress,
+    isRendering,
     activeJobId,
+    setRenderProgress,
+    setIsRendering,
     setActiveJobId,
     setPreviewMode,
+    updateProjectPartial,
   } = useEditorStore();
 
-  const [quality, setQuality] = useState<'fast' | 'balanced' | 'high'>(
-    project?.export?.quality || 'balanced'
-  );
-  const [resolution, setResolution] = useState<string>(
-    project?.export?.resolution || '1080x1920'
+  const resolution: ExportResolution =
+    project?.export?.resolution === '720x1280' ? '720x1280' : '1080x1920';
+  const quality: 'fast' | 'balanced' | 'high' = project?.export?.quality || 'balanced';
+  const [starting, setStarting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [renderStartTime, setRenderStartTime] = useState<number | null>(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  const [generatingCaption, setGeneratingCaption] = useState(false);
+  const [copiedCaption, setCopiedCaption] = useState(false);
+
+  const hasVideo = Boolean(project?.video?.path);
+  const hasVoice = Boolean(project?.tts?.audioPath);
+  const subtitleEnabled = project?.subtitle?.enabled !== false;
+  const subtitleOk = !subtitleEnabled || Boolean(project?.subtitle?.words?.length);
+  const isDesynced = Boolean(
+    project?.tts?.audioPath &&
+      !project?.tts?.isCustomAudio &&
+      project?.tts?.sourceText &&
+      project?.script?.text &&
+      project.tts.sourceText.trim() !== project.script.text.trim()
   );
 
+  // Elapsed timer during active render
+  useEffect(() => {
+    if (!isRendering) {
+      setRenderStartTime(null);
+      setElapsedSec(0);
+      return;
+    }
+    const start = renderStartTime || Date.now();
+    if (!renderStartTime) setRenderStartTime(start);
+    const t = window.setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [isRendering, renderStartTime]);
 
+  // Poll job status
+  useEffect(() => {
+    if (!isRendering || !activeJobId || !project?._id) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/jobs/${activeJobId}`);
+        const json = (await res.json()) as JobPollResponse;
+        if (cancelled || !json.success || !json.data) return;
+
+        const job = json.data;
+        setRenderProgress(job.progress || 0);
+
+        if (job.status === 'done') {
+          setIsRendering(false);
+          setActiveJobId(null);
+          const projRes = await fetch(`/api/projects/${project._id}`);
+          const projJson = (await projRes.json()) as {
+            success: boolean;
+            data?: ProjectDTO;
+          };
+          if (projJson.success && projJson.data) {
+            updateProjectPartial(projJson.data, false);
+          }
+          setPreviewMode('export');
+          toast.success('Xuất video hoàn tất! Bạn có thể tải xuống ngay.');
+        } else if (job.status === 'error' || job.status === 'cancelled') {
+          setIsRendering(false);
+          setActiveJobId(null);
+          const projRes = await fetch(`/api/projects/${project._id}`);
+          const projJson = (await projRes.json()) as {
+            success: boolean;
+            data?: ProjectDTO;
+          };
+          if (projJson.success && projJson.data) {
+            updateProjectPartial(projJson.data, false);
+          }
+          if (job.status === 'error') {
+            toast.error(job.error || 'Quá trình xuất video gặp lỗi');
+          } else {
+            toast.info('Đã hủy tiến trình xuất video');
+          }
+        }
+      } catch {
+        // Ignore transient network poll error
+      }
+    };
+
+    poll();
+    const timer = window.setInterval(poll, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    activeJobId,
+    isRendering,
+    project?._id,
+    setActiveJobId,
+    setIsRendering,
+    setPreviewMode,
+    setRenderProgress,
+    updateProjectPartial,
+  ]);
 
   const handleStartRender = async () => {
     if (!project?._id) return;
-
-    if (!project.video?.path) {
-      toast.error('Chưa có video gốc. Hãy tải lên video ở tab Kịch bản.');
+    if (!hasVideo || !hasVoice) {
+      toast.error('Cần có video gốc và giọng đọc trước khi xuất.');
       return;
     }
 
-    if (!project.tts?.audioPath) {
-      toast.error('Chưa có giọng đọc TTS. Hãy tạo giọng đọc ở tab Giọng đọc.');
-      return;
-    }
-
+    setStarting(true);
     try {
-      setIsRendering(true);
-      setRenderProgress(5);
+      const saved = await onFlushSave();
+      if (!saved) {
+        toast.error('Không thể lưu cấu hình hiện tại trước khi xuất video.');
+        return;
+      }
+
+      // Đảm bảo tệp phụ đề mới nhất được sinh nếu bật phụ đề
+      if (project.subtitle?.enabled && project.subtitle.words?.length > 0) {
+        const subRes = await fetch(`/api/projects/${project._id}/subtitle`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enabled: true,
+            style: project.subtitle.style,
+            words: project.subtitle.words.map((w) => ({
+              word: w.word,
+              start: w.start,
+              end: w.end,
+            })),
+          }),
+        });
+        if (!subRes.ok) {
+          const subErr = (await subRes.json().catch(() => ({}))) as { error?: string };
+          toast.error(subErr.error || 'Không thể tạo tệp phụ đề trước khi render');
+          return;
+        }
+      }
 
       const res = await fetch(`/api/projects/${project._id}/render`, {
         method: 'POST',
@@ -60,217 +193,369 @@ export function ExportPanel() {
         body: JSON.stringify({ quality, resolution }),
       });
 
-      const data = await res.json();
-      if (data.success && data.data?.jobId) {
-        setActiveJobId(data.data.jobId);
-        toast.info('Đã đưa tác vụ render FFmpeg vào hàng đợi BullMQ...');
-      } else {
-        setIsRendering(false);
-        toast.error(data.error || 'Khởi động render thất bại');
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: { jobId?: string };
+        error?: string;
+      };
+
+      if (res.status === 409 && json.data?.jobId) {
+        setActiveJobId(json.data.jobId);
+        setIsRendering(true);
+        toast.info('Video đang trong hàng đợi xử lý, đã kết nối lại tiến trình.');
+        return;
       }
+
+      if (!res.ok || !json.success || !json.data?.jobId) {
+        toast.error(json.error || 'Không thể bắt đầu xuất video');
+        return;
+      }
+
+      setRenderStartTime(Date.now());
+      setRenderProgress(0);
+      setActiveJobId(json.data.jobId);
+      setIsRendering(true);
+      toast.success('Đã đưa video vào hàng đợi xuất bản hoàn chỉnh!');
     } catch {
-      setIsRendering(false);
-      toast.error('Lỗi kết nối khi kích hoạt render');
+      toast.error('Lỗi kết nối máy chủ khi xuất video');
+    } finally {
+      setStarting(false);
     }
   };
 
-  const isDone = project?.status === 'done' && Boolean(project.export?.path);
+  const handleCancelRender = async () => {
+    if (!activeJobId) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/jobs/${activeJobId}/cancel`, { method: 'POST' });
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: { project?: ProjectDTO };
+        error?: string;
+      };
+      if (!res.ok || !json.success) {
+        toast.error(json.error || 'Không thể hủy tiến trình');
+        return;
+      }
+      setIsRendering(false);
+      setActiveJobId(null);
+      setRenderProgress(0);
+      if (json.data?.project) {
+        updateProjectPartial(json.data.project, false);
+      }
+      toast.success('Đã hủy xuất video');
+    } catch {
+      toast.error('Lỗi kết nối khi hủy render');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleGenerateCaption = async () => {
+    if (!project?._id) return;
+    setGeneratingCaption(true);
+    try {
+      const res = await fetch(`/api/projects/${project._id}/marketing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'caption',
+          productName: project.script?.productName || project.name,
+          scriptText: project.script?.text,
+        }),
+      });
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: { caption?: string; hashtags?: string[]; project?: ProjectDTO };
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.data) {
+        toast.error(json.error || 'Không thể tạo caption lúc này');
+        return;
+      }
+      if (json.data.project) {
+        updateProjectPartial(json.data.project, false);
+      }
+      toast.success('Đã tạo caption và hashtag chuẩn TikTok!');
+    } catch {
+      toast.error('Lỗi kết nối khi tạo caption');
+    } finally {
+      setGeneratingCaption(false);
+    }
+  };
+
+  const fullCaptionCopy = [
+    project?.script?.captionText || '',
+    (project?.script?.hashtags || []).join(' '),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const handleCopyCaption = async () => {
+    if (!fullCaptionCopy) return;
+    try {
+      await navigator.clipboard.writeText(fullCaptionCopy);
+      setCopiedCaption(true);
+      toast.success('Đã sao chép nội dung đăng bài!');
+      window.setTimeout(() => setCopiedCaption(false), 1800);
+    } catch {
+      toast.error('Không thể sao chép tự động');
+    }
+  };
+
+  const etaSeconds =
+    renderProgress >= 10 && elapsedSec > 1
+      ? Math.max(1, Math.round((elapsedSec / renderProgress) * (100 - renderProgress)))
+      : null;
+
+  const isDone = project?.status === 'done' && Boolean(project?.export?.path);
 
   return (
-    <div className="flex flex-col gap-5 p-4 text-sm">
+    <div className="space-y-4">
       <div>
-        <h3 className="font-semibold text-white">Xuất Bản & Render Video (FFmpeg)</h3>
-        <p className="text-xs text-[#a1a1aa] mt-0.5">
-          Tự động ghép video chuẩn 9:16, mix nhạc nền, burn phụ đề karaoke và nén chuẩn H.264
+        <h2 className="text-sm font-bold text-[#fafafa]">5. Xuất video hoàn chỉnh</h2>
+        <p className="text-[11px] text-[#9ca3af]">
+          Kiểm tra các thành phần và kết xuất tệp MP4 dọc chuẩn TikTok
         </p>
       </div>
 
-      {/* Resolution Selection */}
-      <div className="flex flex-col gap-2">
-        <label className="text-xs font-medium text-[#a1a1aa]">Độ phân giải đầu ra</label>
-        <div className="grid grid-cols-2 gap-2.5">
-          {[
-            {
-              id: '1080x1920',
-              label: '1080 x 1920 (FHD 9:16)',
-              desc: 'Chuẩn TikTok, Reels, Shorts',
-            },
-            {
-              id: '720x1280',
-              label: '720 x 1280 (HD 9:16)',
-              desc: 'Tối ưu dung lượng nhẹ',
-            },
-          ].map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              disabled={isRendering}
-              onClick={() => setResolution(item.id)}
-              className={`rounded-xl border p-3 text-left transition-all ${
-                resolution === item.id
-                  ? 'border-[#f97316] bg-[#431407]/40 shadow-sm'
-                  : 'border-[#3f3f46] bg-[#09090b] hover:bg-[#27272a]'
-              }`}
-            >
-              <p className="font-semibold text-xs text-white">{item.label}</p>
-              <p className="text-[11px] text-[#a1a1aa] mt-0.5">{item.desc}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Quality Options */}
-      <div className="flex flex-col gap-2">
-        <label className="text-xs font-medium text-[#a1a1aa]">Chất lượng nén video</label>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          {[
-            {
-              id: 'fast',
-              label: 'Nhanh (Fast)',
-              desc: 'Ultrafast - Nhanh nhất',
-            },
-            {
-              id: 'balanced',
-              label: 'Cân bằng (Balanced)',
-              desc: 'Medium CRF 23 - Chuẩn TikTok',
-            },
-            {
-              id: 'high',
-              label: 'Cao cấp (High)',
-              desc: 'Slow CRF 18 - Nét căng',
-            },
-          ].map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              disabled={isRendering}
-              onClick={() => setQuality(item.id as any)}
-              className={`rounded-xl border p-3 text-left transition-all ${
-                quality === item.id
-                  ? 'border-[#f97316] bg-[#431407]/40 shadow-sm'
-                  : 'border-[#3f3f46] bg-[#09090b] hover:bg-[#27272a]'
-              }`}
-            >
-              <p className="font-semibold text-xs text-white">{item.label}</p>
-              <p className="text-[11px] text-[#a1a1aa] mt-0.5">{item.desc}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Pipeline Summary */}
-      <div className="rounded-xl border border-[#3f3f46] bg-[#09090b] p-4 text-xs flex flex-col gap-2.5">
-        <p className="font-semibold text-white">Quy trình xử lý tự động:</p>
-        <div className="grid grid-cols-2 gap-y-2 text-[#a1a1aa]">
-          <div>
-            • Video gốc: <span className="text-white">{project?.video?.fileName || 'Chưa có'}</span>
-          </div>
-          <div>
-            • Giọng đọc: <span className="text-white">{project?.tts?.voice || 'Chưa tạo'}</span>
-          </div>
-          <div>
-            • Phụ đề karaoke:{' '}
-            <span className="text-white">
-              {project?.subtitle?.enabled
-                ? `Bật (${project.subtitle.words?.length || 0} từ ASS)`
-                : 'Tắt'}
+      {/* Checklist */}
+      <div className="rounded-lg border border-white/[0.08] bg-[#18181b] p-3 space-y-2">
+        <div className="text-[11px] font-semibold text-[#d4d4d8]">Kiểm tra trước khi xuất</div>
+        {[
+          { ok: hasVideo, label: 'Video gốc', detail: project?.video?.fileName || 'Chưa tải lên' },
+          {
+            ok: hasVoice,
+            label: 'Giọng đọc',
+            detail: project?.tts?.isCustomAudio
+              ? 'Giọng tự thu âm'
+              : hasVoice
+              ? 'Đã tạo xong'
+              : 'Chưa tạo giọng đọc',
+          },
+          {
+            ok: subtitleOk,
+            label: 'Phụ đề Karaoke',
+            detail: subtitleEnabled
+              ? `${project?.subtitle?.words?.length || 0} từ đồng bộ`
+              : 'Đang tắt',
+          },
+          {
+            ok: true,
+            label: 'Nhạc nền & Logo',
+            detail: [
+              project?.bgMusic?.name || 'Không nhạc nền',
+              project?.watermark?.enabled ? 'Có logo' : null,
+            ]
+              .filter(Boolean)
+              .join(' | '),
+          },
+        ].map((item) => (
+          <div key={item.label} className="flex items-center justify-between gap-2 text-[11px]">
+            <span className="flex items-center gap-1.5 text-[#fafafa]">
+              {item.ok ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              ) : (
+                <CircleAlert className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              )}
+              <span>{item.label}</span>
             </span>
+            <span className="truncate max-w-[170px] text-[#a1a1aa]">{item.detail}</span>
           </div>
-          <div>
-            • Nhạc nền:{' '}
-            <span className="text-white">
-              {project?.bgMusic?.path
-                ? `Có (${Math.round((project.bgMusic.volume ?? 0.12) * 100)}% vol)`
-                : 'Không'}
-            </span>
+        ))}
+
+        {isDesynced && (
+          <div className="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-200">
+            Lưu ý: Nội dung kịch bản khác với giọng đọc hiện tại. Video sẽ dùng file giọng đọc đang có.
+          </div>
+        )}
+      </div>
+
+      {/* Resolution & Quality */}
+      <div className="space-y-3 rounded-lg border border-white/[0.08] bg-[#18181b] p-3">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-[#d4d4d8]">Độ phân giải</label>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                { value: '1080x1920', title: '1080 × 1920', desc: 'Full HD (Khuyên dùng)' },
+                { value: '720x1280', title: '720 × 1280', desc: 'HD Nhanh & nhẹ' },
+              ] as Array<{ value: ExportResolution; title: string; desc: string }>
+            ).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() =>
+                  updateProjectPartial({
+                    export: {
+                      ...(project?.export || { path: '', quality: 'balanced' }),
+                      resolution: opt.value,
+                    },
+                  })
+                }
+                className={`rounded-md border px-2.5 py-2 text-left cursor-pointer ${
+                  resolution === opt.value
+                    ? 'border-[#f97316]/60 bg-[#f97316]/12 text-white'
+                    : 'border-white/[0.08] bg-[#09090b] text-[#a1a1aa]'
+                }`}
+              >
+                <div className="font-mono text-xs font-semibold">{opt.title}</div>
+                <div className="text-[10px] text-[#9ca3af]">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-[#d4d4d8]">Chất lượng mã hóa</label>
+          <div className="grid grid-cols-3 gap-1.5">
+            {(
+              [
+                { value: 'fast', label: 'Nhanh' },
+                { value: 'balanced', label: 'Cân bằng' },
+                { value: 'high', label: 'Cao nhất' },
+              ] as const
+            ).map((q) => (
+              <button
+                key={q.value}
+                type="button"
+                onClick={() =>
+                  updateProjectPartial({
+                    export: {
+                      ...(project?.export || { path: '', resolution: '1080x1920' }),
+                      quality: q.value,
+                    },
+                  })
+                }
+                className={`rounded-md border py-1.5 text-[11px] font-medium cursor-pointer ${
+                  quality === q.value
+                    ? 'border-[#f97316]/60 bg-[#f97316]/15 text-[#fb923c]'
+                    : 'border-white/[0.08] bg-[#09090b] text-[#a1a1aa]'
+                }`}
+              >
+                {q.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Render Progress or Status Box */}
+      {/* Progress / Render CTA */}
       {isRendering ? (
-        <div className="rounded-xl border border-[#eab308]/50 bg-[#eab308]/10 p-4 flex flex-col gap-3">
+        <div className="space-y-3 rounded-lg border border-[#f97316]/40 bg-[#f97316]/10 p-3.5">
           <div className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-2 font-bold text-[#eab308]">
+            <span className="flex items-center gap-2 font-semibold text-[#fb923c]">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span>FFmpeg đang render video...</span>
+              Đang kết xuất video...
             </span>
-            <span className="font-mono text-white font-bold">{renderProgress}%</span>
+            <span className="font-mono font-bold text-white tabular-nums">{renderProgress}%</span>
           </div>
-
-          <div className="w-full h-2 bg-[#27272a] rounded-full overflow-hidden">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-black/50">
             <div
-              className="h-full bg-gradient-to-r from-[#eab308] to-[#f97316] transition-all duration-300 rounded-full"
+              className="h-full bg-[#f97316] transition-all duration-300"
               style={{ width: `${renderProgress}%` }}
             />
           </div>
-
-          <p className="text-[11px] text-[#a1a1aa]">
-            Tác vụ đang chạy ngầm trong Worker BullMQ. Vui lòng giữ trang trong khi hoàn tất.
-          </p>
-        </div>
-      ) : isDone ? (
-        <div className="rounded-xl border border-[#22c55e]/40 bg-[#22c55e]/10 p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#22c55e]/20 text-[#22c55e]">
-              <CheckCircle2 className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="font-bold text-white text-xs">Video đã render hoàn tất!</p>
-              <p className="text-xs text-[#a1a1aa] mt-0.5">
-                Dung lượng: {formatFileSize(project.export?.fileSize)} • Độ phân giải: {project.export?.resolution || resolution}
-              </p>
-            </div>
+          <div className="flex items-center justify-between text-[11px] text-[#d4d4d8]">
+            <span>Đã chạy: {elapsedSec}s</span>
+            <span>{etaSeconds ? `Còn khoảng ~${etaSeconds}s` : 'Đang ước lượng thời gian...'}</span>
           </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleCancelRender}
+            disabled={cancelling}
+            className="w-full gap-1.5"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            <span>{cancelling ? 'Đang hủy...' : 'Hủy xuất video'}</span>
+          </Button>
+        </div>
+      ) : (
+        <Button
+          onClick={handleStartRender}
+          disabled={starting || !hasVideo || !hasVoice}
+          className="w-full h-10 gap-2 text-xs font-bold"
+        >
+          {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
+          <span>{isDone ? 'Xuất lại phiên bản mới' : 'Bắt đầu xuất video MP4'}</span>
+        </Button>
+      )}
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPreviewMode('export')}
-              className="inline-flex items-center gap-1 rounded-lg border border-[#3f3f46] bg-[#27272a] px-3 py-2 text-xs font-semibold text-white hover:bg-[#3f3f46] transition-colors"
-            >
-              <Tv className="h-3.5 w-3.5 text-[#f97316]" />
-              <span>Xem trực tiếp</span>
-            </button>
-
+      {/* Download & Post Marketing */}
+      {isDone && project?._id && (
+        <div className="space-y-3 rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-3.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-emerald-300">Video đã sẵn sàng!</span>
+            <span className="font-mono text-[11px] text-emerald-200">
+              {project.export?.resolution} | {formatFileSize(project.export?.fileSize)}
+            </span>
+          </div>
+          <div className="flex gap-2">
             <a
               href={`/api/projects/${project._id}/export`}
-              download
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#22c55e] px-4 py-2 text-xs font-bold text-black hover:bg-[#16a34a] transition-colors shadow-md"
+              className="flex-1 inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-500 px-3 text-xs font-bold text-black hover:bg-emerald-400 transition-colors"
             >
-              <Download className="h-4 w-4" />
-              <span>Tải Video (.mp4)</span>
+              <Download className="h-3.5 w-3.5" />
+              <span>Tải về MP4</span>
             </a>
+            <Button
+              variant="outline"
+              onClick={() => setPreviewMode('export')}
+              className="gap-1.5"
+            >
+              <Play className="h-3.5 w-3.5" />
+              <span>Xem thử</span>
+            </Button>
           </div>
         </div>
-      ) : null}
+      )}
 
-      {/* Actions */}
-      <div className="flex items-center justify-between pt-2">
-        <span className="text-xs text-[#71717a]">
-          {project?.video?.path && project?.tts?.audioPath
-            ? 'Đã sẵn sàng để render'
-            : 'Cần tải video gốc và tạo giọng đọc trước khi render'}
-        </span>
+      {/* AI TikTok Caption & Hashtags */}
+      <div className="space-y-2.5 rounded-lg border border-white/[0.08] bg-[#18181b] p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold text-[#fafafa] flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-[#f97316]" />
+            <span>Caption & Hashtag đăng TikTok</span>
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={generatingCaption}
+            onClick={handleGenerateCaption}
+            className="h-7 px-2.5 text-[11px]"
+          >
+            {generatingCaption ? (
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+            ) : null}
+            {project?.script?.captionText ? 'Tạo lại' : 'Tạo bằng AI'}
+          </Button>
+        </div>
 
-        <button
-          type="button"
-          onClick={handleStartRender}
-          disabled={isRendering || !project?.video?.path || !project?.tts?.audioPath}
-          className="inline-flex items-center gap-2 rounded-xl bg-[#f97316] px-6 py-2.5 text-xs font-bold text-black hover:bg-[#ea580c] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
-        >
-          {isRendering ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Đang render...</span>
-            </>
-          ) : (
-            <>
-              <Rocket className="h-4 w-4" />
-              <span>{isDone ? 'Render lại video mới' : 'Bắt đầu Render Video'}</span>
-            </>
-          )}
-        </button>
+        {project?.script?.captionText ? (
+          <div className="space-y-2">
+            <div className="rounded-md border border-white/[0.08] bg-[#09090b] p-2.5 text-xs text-[#e4e4e7] whitespace-pre-wrap leading-relaxed">
+              {fullCaptionCopy}
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleCopyCaption}
+              className="w-full gap-1.5"
+            >
+              {copiedCaption ? (
+                <Check className="h-3.5 w-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              <span>{copiedCaption ? 'Đã sao chép vào khay nhớ tạm' : 'Sao chép Caption + Hashtag'}</span>
+            </Button>
+          </div>
+        ) : (
+          <p className="text-[11px] text-[#9ca3af]">
+            Tạo nhanh mô tả thu hút kèm 4–6 hashtag liên quan để đăng kèm video TikTok Shop.
+          </p>
+        )}
       </div>
     </div>
   );

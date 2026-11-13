@@ -1,10 +1,7 @@
 import { Queue } from 'bullmq';
-import { getRedisConnectionOptions } from './connection';
-
-const connection = getRedisConnectionOptions();
+import { getRedisQueueConnectionOptions } from './connection';
 
 declare global {
-  // eslint-disable-next-line no-var
   var videoQueueInstance: Queue | undefined;
 }
 
@@ -16,7 +13,7 @@ export function getVideoQueue(): Queue {
   }
 
   const queue = new Queue(VIDEO_QUEUE_NAME, {
-    connection,
+    connection: getRedisQueueConnectionOptions(),
     defaultJobOptions: {
       attempts: 2,
       backoff: {

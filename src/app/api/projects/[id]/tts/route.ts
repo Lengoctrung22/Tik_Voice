@@ -4,7 +4,7 @@ import fs from 'fs';
 import { connectDB } from '@/lib/db';
 import { Project } from '@/lib/db/models/Project';
 import { ttsEngine } from '@/lib/tts/engine';
-import { getCategoryPath } from '@/lib/storage/local';
+import { getCategoryPath, safeUnlinkStorageFile } from '@/lib/storage/local';
 import { generateAssFile } from '@/lib/video/subtitle';
 
 export async function POST(
@@ -20,12 +20,22 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Không tìm thấy dự án' }, { status: 404 });
     }
 
-    const body = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as {
+      text?: string;
+      voice?: string;
+      speed?: number;
+      pitch?: number;
+      engine?: 'edge' | 'google';
+      applyPronunciation?: boolean;
+    };
     const textToSynthesize = (body.text || project.script?.text || '').trim();
 
     if (!textToSynthesize) {
       return NextResponse.json(
-        { success: false, error: 'Kịch bản đang trống. Vui lòng viết hoặc tạo kịch bản trước.' },
+        {
+          success: false,
+          error: 'Không tạo được giọng đọc: kịch bản đang trống. Hãy viết hoặc tạo kịch bản trước.',
+        },
         { status: 400 }
       );
     }
@@ -34,6 +44,10 @@ export async function POST(
     const speed = typeof body.speed === 'number' ? body.speed : project.tts?.speed ?? 1.0;
     const pitch = typeof body.pitch === 'number' ? body.pitch : project.tts?.pitch ?? 0;
     const engine = body.engine || project.tts?.engine || 'edge';
+    const applyPronunciation = body.applyPronunciation ?? true;
+
+    const oldAudioPath = project.tts?.audioPath;
+    const oldSubPath = project.subtitle?.path;
 
     const audioDir = getCategoryPath('audio', id);
     const audioFileName = `speech_${Date.now()}.mp3`;
@@ -44,15 +58,18 @@ export async function POST(
       speed,
       pitch,
       engine,
+      applyPronunciation,
     });
 
     project.tts = {
-      engine,
-      voice,
+      engine: result.actualEngine || engine,
+      voice: result.actualVoice || voice,
       speed,
       pitch,
       audioPath: outputPath,
       audioDuration: result.audioDuration,
+      sourceText: textToSynthesize,
+      isCustomAudio: false,
     };
 
     project.subtitle.words = result.words;
@@ -71,6 +88,13 @@ export async function POST(
 
     await project.save();
 
+    if (oldAudioPath && oldAudioPath !== outputPath) {
+      await safeUnlinkStorageFile(oldAudioPath);
+    }
+    if (oldSubPath && oldSubPath !== subFilePath) {
+      await safeUnlinkStorageFile(oldSubPath);
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -78,6 +102,8 @@ export async function POST(
         audioUrl: `/api/files/audio/${id}/${audioFileName}`,
         duration: result.audioDuration,
         words: result.words,
+        fallbackFrom: result.fallbackFrom,
+        actualVoice: result.actualVoice,
       },
     });
   } catch (error: unknown) {
